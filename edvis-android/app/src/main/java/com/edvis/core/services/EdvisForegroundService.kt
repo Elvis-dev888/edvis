@@ -15,7 +15,6 @@ import android.hardware.camera2.CameraManager
 import android.location.Geocoder
 import android.location.LocationManager
 import android.media.AudioManager
-import android.media.ToneGenerator
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
@@ -341,10 +340,6 @@ class EdvisForegroundService : Service() {
             val ok = voskWakeEngine.initialize()
             withContext(Dispatchers.Main) {
                 if (ok) {
-                    try {
-                        val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 95)
-                        tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
-                    } catch (_: Exception) {}
                     tts?.speak("E.D.V.I.S. en línea y escuchando. Puede bloquear la pantalla con total tranquilidad.", TextToSpeech.QUEUE_FLUSH, null, "edvis_startup")
                 }
             }
@@ -436,10 +431,7 @@ class EdvisForegroundService : Service() {
         wakeUpScreen()
         ensureAdequateVolume()
 
-        try {
-            val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 95)
-            tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
-        } catch (_: Exception) {}
+        // Seamless, fluid conversation without artificial robotic beeps
 
         val lower = spokenText.lowercase().trim()
         var cleaned = lower.replace(Regex("^(oye\\s+|hola\\s+)?(edvis|elvis|ervis|edwin|jarvis|ed)[,\\s]*", RegexOption.IGNORE_CASE), "").trim()
@@ -587,8 +579,14 @@ class EdvisForegroundService : Service() {
         }
 
         // 4. System Greetings & Presence Check
-        if (cleaned.isEmpty() || cleaned == "estas ahi" || cleaned == "estás ahí" || cleaned == "hola" || cleaned == "despierta") {
-            speakInFemaleVoice("En línea, señor. Todos los sistemas operativos listos. ¿Cuál es su orden?")
+        if (cleaned.isEmpty() || cleaned == "estas ahi" || cleaned == "estás ahí" || cleaned == "hola" || cleaned == "despierta" || cleaned == "dime" || cleaned == "oye") {
+            val naturalResponses = listOf(
+                "A su servicio, señor.",
+                "Dígame, señor.",
+                "En línea, señor.",
+                "Sistemas listos, señor. ¿Cuál es su orden?"
+            )
+            speakInFemaleVoice(naturalResponses.random())
             return
         }
 
