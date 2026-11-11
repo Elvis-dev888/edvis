@@ -1,5 +1,6 @@
 package com.edvis.core.services
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,9 +10,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.location.Geocoder
+import android.location.LocationManager
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -23,6 +29,7 @@ import android.util.Log
 import java.io.File
 import java.util.Locale
 import androidx.core.app.NotificationCompat
+import com.edvis.core.MainActivity
 import com.edvis.core.audio.BluetoothScoManager
 import com.edvis.core.audio.PcmStreamer
 import com.edvis.core.audio.VoskWakeEngine
@@ -640,6 +647,113 @@ class EdvisForegroundService : Service() {
             return
         }
 
+        // 6. Linterna / Hardware Flashlight Control
+        val isTorchOn = cleaned.contains("enciende la linterna") || cleaned.contains("prende la linterna") ||
+            cleaned.contains("activa la linterna") || cleaned == "linterna" || cleaned == "linterna on" ||
+            cleaned.contains("prende linterna") || cleaned.contains("enciende linterna")
+        val isTorchOff = cleaned.contains("apaga la linterna") || cleaned.contains("desactiva la linterna") ||
+            cleaned.contains("apagar linterna") || cleaned == "linterna off" || cleaned.contains("apaga linterna")
+
+        if (isTorchOn) {
+            setTorchMode(true)
+            return
+        }
+        if (isTorchOff) {
+            setTorchMode(false)
+            return
+        }
+
+        // 7. Telemetría y Diagnóstico de Sistemas en Tiempo Real (Batería, RAM, GPS)
+        val isTelemetry = cleaned.contains("estado del sistema") || cleaned.contains("diagnostico") ||
+            cleaned.contains("diagnóstico") || cleaned.contains("reporte de sistemas") ||
+            cleaned.contains("telemetria") || cleaned.contains("telemetría") ||
+            cleaned.contains("cuanta bateria") || cleaned.contains("cuánta batería") ||
+            cleaned == "bateria" || cleaned == "batería" || cleaned.contains("estado de la bateria") ||
+            cleaned.contains("estado de la batería") || cleaned.contains("memoria ram") ||
+            cleaned.contains("como estan los sistemas") || cleaned.contains("cómo están los sistemas")
+
+        if (isTelemetry) {
+            reportSystemTelemetry()
+            return
+        }
+
+        // 8. Control de Volumen de Hardware
+        val isVolumeUp = cleaned.contains("sube el volumen") || cleaned.contains("subir volumen") ||
+            cleaned.contains("aumenta el volumen") || cleaned.contains("más volumen") || cleaned.contains("mas volumen")
+        val isVolumeDown = cleaned.contains("baja el volumen") || cleaned.contains("bajar volumen") ||
+            cleaned.contains("disminuye el volumen") || cleaned.contains("menos volumen")
+        val isVolumeMax = cleaned.contains("volumen al maximo") || cleaned.contains("volumen al máximo") ||
+            cleaned.contains("volumen 100") || cleaned.contains("todo el volumen")
+        val isVolumeMute = cleaned.contains("silencio") || cleaned.contains("mute") || cleaned.contains("silencia")
+
+        if (isVolumeUp) {
+            adjustDeviceVolume(AudioManager.ADJUST_RAISE)
+            return
+        }
+        if (isVolumeDown) {
+            adjustDeviceVolume(AudioManager.ADJUST_LOWER)
+            return
+        }
+        if (isVolumeMax) {
+            setDeviceVolumeMax()
+            return
+        }
+        if (isVolumeMute) {
+            setDeviceVolumeMute()
+            return
+        }
+
+        // 9. Llamadas Telefónicas Directas a Contactos o Números
+        val isPhoneCall = cleaned.startsWith("llama a ") || cleaned.startsWith("llamar a ") ||
+            cleaned.startsWith("marca a ") || cleaned.startsWith("marcar a ") ||
+            lower.startsWith("llama a ") || lower.startsWith("llamar a ")
+
+        if (isPhoneCall) {
+            val callTarget = (if (cleaned.startsWith("llama a ")) cleaned.substringAfter("llama a ")
+                else if (cleaned.startsWith("llamar a ")) cleaned.substringAfter("llamar a ")
+                else if (cleaned.startsWith("marca a ")) cleaned.substringAfter("marca a ")
+                else if (cleaned.startsWith("marcar a ")) cleaned.substringAfter("marcar a ")
+                else if (lower.startsWith("llama a ")) lower.substringAfter("llama a ")
+                else lower.substringAfter("llamar a ")).trim()
+            makeDirectPhoneCall(callTarget)
+            return
+        }
+
+        // 10. Ubicación Satelital GPS y Geocodificación Inversa
+        val isLocationQuery = cleaned.contains("donde estoy") || cleaned.contains("dónde estoy") ||
+            cleaned.contains("ubicacion actual") || cleaned.contains("ubicación actual") ||
+            cleaned.contains("cual es mi posicion") || cleaned.contains("cuál es mi posición") ||
+            cleaned.contains("donde me encuentro") || cleaned.contains("dónde me encuentro")
+
+        if (isLocationQuery) {
+            reportCurrentLocation()
+            return
+        }
+
+        // 11. Escaneo Visual Táctico E.D.I.T.H. (Cámara y Análisis Óptico)
+        val isVisionQuery = cleaned.contains("que estoy viendo") || cleaned.contains("qué estoy viendo") ||
+            cleaned.contains("que tengo al frente") || cleaned.contains("qué tengo al frente") ||
+            cleaned.contains("analiza esto") || cleaned.contains("mira esto") ||
+            cleaned.contains("escanea esto") || cleaned.contains("analiza la camara") ||
+            cleaned.contains("analiza la cámara") || cleaned.contains("vision edith") ||
+            cleaned.contains("visión edith") || cleaned.contains("que hay al frente") ||
+            cleaned.contains("qué hay al frente")
+
+        if (isVisionQuery) {
+            launchCameraVisionAnalysis()
+            return
+        }
+
+        // 12. Domótica y Control de Taller / Hogar Inteligente
+        val isDomotics = cleaned.contains("luz del taller") || cleaned.contains("luces del taller") ||
+            cleaned.contains("protocolo taller") || cleaned.contains("apaga el taller") ||
+            cleaned.contains("enciende el taller") || cleaned.contains("luces del laboratorio")
+
+        if (isDomotics) {
+            triggerDomoticsAction(cleaned)
+            return
+        }
+
         serviceScope.launch(Dispatchers.IO) {
             try {
                 val prompt = if (cleaned.isNotEmpty()) cleaned else spokenText
@@ -795,6 +909,223 @@ class EdvisForegroundService : Service() {
             }
         }
         return result.ifBlank { text }
+    }
+
+    private var isTorchActive = false
+
+    private fun setTorchMode(enabled: Boolean) {
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+                val chars = cameraManager.getCameraCharacteristics(id)
+                chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: cameraManager.cameraIdList.firstOrNull() ?: "0"
+
+            cameraManager.setTorchMode(cameraId, enabled)
+            isTorchActive = enabled
+            val status = if (enabled) "encendida" else "apagada"
+            speakInFemaleVoice("Linterna $status, señor.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error controlling torch: ${e.message}", e)
+            speakInFemaleVoice("No pude controlar la linterna del dispositivo.")
+        }
+    }
+
+    private fun reportSystemTelemetry() {
+        try {
+            val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+            val batteryPct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            val isCharging = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) bm.isCharging else false
+
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val memInfo = ActivityManager.MemoryInfo()
+            am.getMemoryInfo(memInfo)
+            val availGb = String.format(Locale.US, "%.1f", memInfo.availMem / (1024.0 * 1024.0 * 1024.0))
+            val totalGb = String.format(Locale.US, "%.1f", memInfo.totalMem / (1024.0 * 1024.0 * 1024.0))
+
+            val loc = getBestCurrentLocation()
+            val speedKmh = ((loc?.speed ?: 0.0f) * 3.6f).toInt()
+            val chargeText = if (isCharging) "cargando activamente" else "en descarga"
+
+            val report = "Sistemas nominales, señor. Batería al $batteryPct por ciento, $chargeText. Memoria RAM disponible: $availGb gigabytes de $totalGb gigabytes. Velocidad de desplazamiento: $speedKmh kilómetros por hora."
+            speakInFemaleVoice(report)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reporting telemetry: ${e.message}", e)
+            speakInFemaleVoice("Sistemas activos y operativos, señor.")
+        }
+    }
+
+    private fun adjustDeviceVolume(direction: Int) {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI)
+            val current = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val pct = (current * 100) / max
+            val label = if (direction == AudioManager.ADJUST_RAISE) "aumentado al" else "reducido al"
+            speakInFemaleVoice("Volumen $label $pct por ciento, señor.")
+        } catch (e: Exception) {
+            speakInFemaleVoice("Ajustando volumen, señor.")
+        }
+    }
+
+    private fun setDeviceVolumeMax() {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI)
+            speakInFemaleVoice("Volumen al máximo, señor.")
+        } catch (_: Exception) {}
+    }
+
+    private fun setDeviceVolumeMute() {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI)
+            speakInFemaleVoice("Audio silenciado, señor.")
+        } catch (_: Exception) {}
+    }
+
+    private fun makeDirectPhoneCall(target: String) {
+        val cleanTarget = target.trim()
+        if (cleanTarget.isEmpty()) {
+            speakInFemaleVoice("¿A quién desea que llame, señor?")
+            return
+        }
+
+        val isNumber = cleanTarget.replace(" ", "").replace("+", "").replace("-", "").all { it.isDigit() }
+        var numberToCall: String? = if (isNumber) cleanTarget.replace(" ", "") else null
+        var resolvedName = cleanTarget
+
+        if (numberToCall == null) {
+            try {
+                val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                val projection = arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                )
+                val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+                val selectionArgs = arrayOf("%$cleanTarget%")
+                val cursor = contentResolver.query(uri, projection, selection, selectionArgs, null)
+
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        numberToCall = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))
+                        resolvedName = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Contacts query error: ${e.message}", e)
+            }
+        }
+
+        if (!numberToCall.isNullOrBlank()) {
+            speakInFemaleVoice("Llamando a $resolvedName, señor.")
+            try {
+                val callIntent = Intent(Intent.ACTION_CALL).apply {
+                    data = Uri.parse("tel:${Uri.encode(numberToCall)}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(callIntent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Direct call failed: ${e.message}, falling back to dial intent")
+                val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                    data = Uri.parse("tel:${Uri.encode(numberToCall)}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(dialIntent)
+            }
+        } else {
+            speakInFemaleVoice("No encontré el contacto $cleanTarget en su agenda telefónica, señor.")
+        }
+    }
+
+    private fun getBestCurrentLocation(): android.location.Location? {
+        GpsTracker.lastKnownLocation?.let { return it }
+        return try {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            @Suppress("MissingPermission")
+            lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun reportCurrentLocation() {
+        try {
+            val loc = getBestCurrentLocation()
+            if (loc != null) {
+                val geocoder = Geocoder(this, Locale("es", "CO"))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    geocoder.getFromLocation(loc.latitude, loc.longitude, 1) { addresses ->
+                        val addr = addresses.firstOrNull()
+                        val text = if (addr != null) {
+                            val thoroughfare = addr.thoroughfare ?: addr.featureName ?: "Vía principal"
+                            val subLoc = addr.subLocality ?: ""
+                            val city = addr.locality ?: addr.adminArea ?: "Colombia"
+                            "Se encuentra en $thoroughfare, $subLoc, $city, señor."
+                        } else {
+                            "Coordenadas actuales: latitud ${String.format(Locale.US, "%.4f", loc.latitude)}, longitud ${String.format(Locale.US, "%.4f", loc.longitude)}, señor."
+                        }
+                        speakInFemaleVoice(text)
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+                    val addr = addresses?.firstOrNull()
+                    val text = if (addr != null) {
+                        val thoroughfare = addr.thoroughfare ?: addr.featureName ?: "Vía principal"
+                        val subLoc = addr.subLocality ?: ""
+                        val city = addr.locality ?: addr.adminArea ?: "Colombia"
+                        "Se encuentra en $thoroughfare, $subLoc, $city, señor."
+                    } else {
+                        "Coordenadas actuales: latitud ${String.format(Locale.US, "%.4f", loc.latitude)}, longitud ${String.format(Locale.US, "%.4f", loc.longitude)}, señor."
+                    }
+                    speakInFemaleVoice(text)
+                }
+            } else {
+                speakInFemaleVoice("Adquiriendo fijación de satélites GPS. Por favor espere un momento, señor.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error obtaining location: ${e.message}", e)
+            speakInFemaleVoice("Sistemas GPS activos, calculando posición satelital.")
+        }
+    }
+
+    private fun launchCameraVisionAnalysis() {
+        speakInFemaleVoice("Iniciando escaneo óptico táctico E.D.I.T.H., señor.")
+        try {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                action = "ACTION_TACTICAL_VISION"
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening tactical vision: ${e.message}", e)
+        }
+    }
+
+    private fun triggerDomoticsAction(command: String) {
+        val isTurnOn = command.contains("enciende") || command.contains("prende") || command.contains("activa")
+        val state = if (isTurnOn) "encendidas" else "apagadas"
+        speakInFemaleVoice("Protocolo domótico ejecutado: Luces del taller $state, señor.")
+
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val webhookUrl = System.getenv("HOME_ASSISTANT_WEBHOOK") ?: ""
+                if (webhookUrl.isNotBlank()) {
+                    val client = OkHttpClient()
+                    val reqBody = JSONObject().apply {
+                        put("entity", "workshop_lights")
+                        put("state", if (isTurnOn) "on" else "off")
+                    }.toString().toRequestBody("application/json".toMediaType())
+
+                    val req = Request.Builder().url(webhookUrl).post(reqBody).build()
+                    client.newCall(req).execute().close()
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

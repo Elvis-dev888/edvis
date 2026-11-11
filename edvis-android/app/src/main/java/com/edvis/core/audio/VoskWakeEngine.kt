@@ -95,7 +95,25 @@ class VoskWakeEngine(
                         text.contains("reproduce") ||
                         text.contains("reproducir") ||
                         text.contains("musica") ||
-                        text.contains("música")
+                        text.contains("música") ||
+                        text.contains("linterna") ||
+                        text.contains("bateria") ||
+                        text.contains("batería") ||
+                        text.contains("estado") ||
+                        text.contains("diagnostico") ||
+                        text.contains("diagnóstico") ||
+                        text.contains("volumen") ||
+                        text.contains("llama") ||
+                        text.contains("llamar") ||
+                        text.contains("donde") ||
+                        text.contains("dónde") ||
+                        text.contains("camara") ||
+                        text.contains("cámara") ||
+                        text.contains("luz") ||
+                        text.contains("luces") ||
+                        text.contains("taller") ||
+                        text.contains("escanea") ||
+                        text.contains("mira")
 
                     if (isWake) {
                         Log.i(TAG, "Vosk captured speech: '$text' (isFinal=$isFinal, isVoiceWindowActive=$isVoiceWindowActive)")

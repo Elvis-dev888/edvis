@@ -21,6 +21,9 @@ class GpsTracker(
     companion object {
         private const val TAG = "GpsTracker"
         private const val INTERVAL_MS = 5000L
+
+        @Volatile
+        var lastKnownLocation: android.location.Location? = null
     }
 
     private val fusedClient: FusedLocationProviderClient =
@@ -29,6 +32,7 @@ class GpsTracker(
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
+            lastKnownLocation = loc
             val speedKmh = loc.speed * 3.6f
             onTelemetryUpdate(loc.latitude, loc.longitude, speedKmh, loc.bearing)
         }

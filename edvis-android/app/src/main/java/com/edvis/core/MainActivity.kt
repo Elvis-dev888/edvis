@@ -376,6 +376,16 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.action == "ACTION_TACTICAL_VISION") {
+            webView?.evaluateJavascript(
+                "if (window.startTacticalScan) { window.startTacticalScan(); } else { console.log('E.D.I.T.H. Tactical Vision scan triggered'); }",
+                null
+            )
+        }
+    }
+
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         try {
@@ -390,6 +400,7 @@ class MainActivity : AppCompatActivity() {
     private fun requestRequiredPermissions() {
         val perms = mutableListOf(
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA,
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.CALL_PHONE,
