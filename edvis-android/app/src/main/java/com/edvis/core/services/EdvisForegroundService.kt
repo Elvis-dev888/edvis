@@ -174,6 +174,14 @@ class EdvisForegroundService : Service() {
         tts?.setPitch(1.08f)
         tts?.setSpeechRate(1.05f)
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val audioAttributes = android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            tts?.setAudioAttributes(audioAttributes)
+        }
+
         try {
             val voices = tts?.voices
             val femaleVoice = voices?.firstOrNull { voice ->
@@ -472,8 +480,9 @@ class EdvisForegroundService : Service() {
                         val msg = currentPendingMessageText ?: ""
 
                         if (isPendingMessageAudio) {
-                            speakInFemaleVoice("Abriendo $app para reproducir la nota de voz, señor.")
+                            speakInFemaleVoice("Reproduciendo nota de voz de $sender, señor.")
                             EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, app)
+                            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
                             conversationState = ConversationState.IDLE
                             currentReplyTarget = null
                             currentReplyApp = null
@@ -590,17 +599,24 @@ class EdvisForegroundService : Service() {
             return
         }
 
-        // 4. Music Playback Control (Spotify / System Music Player)
-        val isPlayMusic = cleaned == "pon musica" || cleaned == "pon música" ||
+        // 4. Music Playback Control (Spotify / YouTube / System Music Player)
+        val isMusicTarget = cleaned.contains("musica") || cleaned.contains("música") ||
+            cleaned.contains("spotify") || cleaned.contains("youtube") ||
+            cleaned.contains("cancion") || cleaned.contains("canción")
+
+        val hasPlayIntent = cleaned.contains("pon ") || cleaned.startsWith("pon ") ||
+            cleaned.contains("reproduce") || cleaned.contains("reproducir") ||
+            cleaned.contains("play") || cleaned.contains("dale play") ||
+            cleaned == "pon musica" || cleaned == "pon música" ||
             cleaned == "reproduce musica" || cleaned == "reproduce música" ||
-            cleaned.contains("pon musica") || cleaned.contains("pon música") ||
-            cleaned.contains("reproduce musica") || cleaned.contains("reproduce música") ||
-            cleaned.startsWith("play ") || cleaned == "play" || cleaned == "reproducir" ||
-            cleaned.contains("abre spotify y reproduce") || cleaned.contains("abre la musica y reproduce")
+            cleaned == "play" || cleaned == "reproducir" || cleaned == "dale play"
+
+        val isPlayMusic = hasPlayIntent && (isMusicTarget || cleaned == "play" || cleaned == "reproducir" || cleaned == "dale play")
 
         if (isPlayMusic) {
-            speakInFemaleVoice("Reproduciendo música, señor.")
-            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "spotify")
+            val targetApp = if (cleaned.contains("youtube")) "youtube" else "spotify"
+            speakInFemaleVoice("Reproduciendo música en $targetApp, señor.")
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, targetApp)
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 try {
                     val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -608,7 +624,7 @@ class EdvisForegroundService : Service() {
                     am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
                     EdvisAccessibilityService.instance?.executeAction("PLAY_MUSIC", "", "")
                 } catch (_: Exception) {}
-            }, 1200L)
+            }, 1400L)
             return
         }
 
@@ -837,7 +853,7 @@ class EdvisForegroundService : Service() {
                 val jsonBody = JSONObject().apply {
                     put("systemInstruction", JSONObject().apply {
                         put("parts", org.json.JSONArray().put(JSONObject().apply {
-                            put("text", "Eres E.D.V.I.S., asistente táctico personal de Elvis inspirado en JARVIS de Iron Man. Responde siempre en español, conciso (máximo 2 oraciones), tono táctico y seguro. Si el usuario pide abrir una app o hacer una llamada, utiliza obligatoriamente la función dispatch_device_action.")
+                            put("text", "Eres E.D.V.I.S., el asistente táctico personal de Elvis inspirado en J.A.R.V.I.S. y E.D.I.T.H., con la inteligencia profunda y el conocimiento de ChatGPT. Responde en español, de forma conversacional, inteligente, natural y directa (máximo 2 oraciones concisas). Si el usuario pide abrir una app o hacer una llamada, utiliza siempre dispatch_device_action.")
                         }))
                     })
                     put("contents", org.json.JSONArray().put(JSONObject().apply {

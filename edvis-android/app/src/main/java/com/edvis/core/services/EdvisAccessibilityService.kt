@@ -24,14 +24,25 @@ class EdvisAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val messageToInject = pendingWhatsAppMessage ?: return
         val rootNode = rootInActiveWindow ?: return
+        val pkg = rootNode.packageName?.toString() ?: ""
 
-        if (rootNode.packageName?.toString()?.contains("com.whatsapp") == true) {
-            val injected = injectAndSendWhatsApp(rootNode, messageToInject)
-            if (injected) {
-                pendingWhatsAppMessage = null
-                Log.i(TAG, "WhatsApp reply injected and dispatched automatically")
+        if (pkg.contains("com.whatsapp")) {
+            val messageToInject = pendingWhatsAppMessage
+            if (messageToInject != null) {
+                val injected = injectAndSendWhatsApp(rootNode, messageToInject)
+                if (injected) {
+                    pendingWhatsAppMessage = null
+                    Log.i(TAG, "WhatsApp reply injected and dispatched automatically")
+                }
+            }
+
+            if (pendingPlayVoiceNote) {
+                val played = playLastVoiceMessageInWhatsApp(rootNode)
+                if (played) {
+                    pendingPlayVoiceNote = false
+                    Log.i(TAG, "WhatsApp voice message play button clicked automatically")
+                }
             }
         }
     }
@@ -144,6 +155,50 @@ class EdvisAccessibilityService : AccessibilityService() {
         return false
     }
 
+    fun triggerPlayLastVoiceMessageInWhatsApp() {
+        pendingPlayVoiceNote = true
+        rootInActiveWindow?.let { root ->
+            if (playLastVoiceMessageInWhatsApp(root)) {
+                pendingPlayVoiceNote = false
+            }
+        }
+    }
+
+    private fun playLastVoiceMessageInWhatsApp(root: AccessibilityNodeInfo): Boolean {
+        val voiceIds = listOf(
+            "com.whatsapp:id/conversation_row_sound_recording_play_button",
+            "com.whatsapp:id/play",
+            "com.whatsapp:id/play_pause_button",
+            "com.whatsapp:id/voice_note_play"
+        )
+        for (id in voiceIds) {
+            val nodes = root.findAccessibilityNodeInfosByViewId(id)
+            val lastBtn = nodes.lastOrNull()
+            if (lastBtn != null && lastBtn.isClickable) {
+                lastBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return true
+            }
+        }
+        return clickLastNodeByTextOrDesc(root, listOf("reproducir", "play", "escuchar"))
+    }
+
+    private fun clickLastNodeByTextOrDesc(node: AccessibilityNodeInfo, keywords: List<String>): Boolean {
+        for (i in (node.childCount - 1) downTo 0) {
+            val child = node.getChild(i) ?: continue
+            if (clickLastNodeByTextOrDesc(child, keywords)) return true
+        }
+
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        if (keywords.any { text.contains(it) || desc.contains(it) }) {
+            if (node.isClickable) {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return true
+            }
+        }
+        return false
+    }
+
     companion object {
         private const val TAG = "EdvisAccessibility"
 
@@ -153,6 +208,9 @@ class EdvisAccessibilityService : AccessibilityService() {
 
         @Volatile
         private var pendingWhatsAppMessage: String? = null
+
+        @Volatile
+        private var pendingPlayVoiceNote: Boolean = false
 
         /**
          * Opens ANY installed application on the phone by matching either its package name
