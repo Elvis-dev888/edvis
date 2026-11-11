@@ -1,0 +1,3 @@
+/api/chat          /.netlify/functions/chat          200
+/api/transactions  /.netlify/functions/transactions  200
+/health            /.netlify/functions/health        200

@@ -1,0 +1,29 @@
+{
+  "name": "edvis-backend",
+  "version": "1.0.0",
+  "description": "E.D.V.I.S. (Electronic Direct Vision Intelligence System) Tactical Brain Server",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "provision:supabase": "tsx src/scripts/provision_supabase.ts",
+    "deploy:netlify": "tsx src/scripts/deploy_netlify.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.29.1",
+    "@supabase/supabase-js": "^2.49.1",
+    "dotenv": "^16.4.7",
+    "pg": "^8.13.3",
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "@types/pg": "^8.11.11",
+    "@types/ws": "^8.18.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

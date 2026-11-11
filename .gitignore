@@ -1,0 +1,26 @@
+.netlify/
+node_modules/
+edvis-backend/node_modules/
+edvis-backend/dist/
+edvis-backend/.env
+.env
+.env.local
+
+# Android builds & caches
+.gradle/
+build/
+edvis-android/.gradle/
+edvis-android/app/build/
+edvis-android/build/
+edvis-android/local.properties
+edvis-android/.cxx/
+edvis-android/.idea/
+*.iml
+.idea/
+
+# Large binaries (APKs are hosted live on Netlify CDN)
+edvis-tactical.apk
+*.apk
+*.log
+.DS_Store
+Thumbs.db

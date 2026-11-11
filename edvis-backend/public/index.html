@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#00e5ff" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <title>E.D.V.I.S. // Tactical Command Console</title>
+  <style>
+    :root {
+      --bg: #070b10;
+      --panel: #0e1621;
+      --border: #1d2d44;
+      --cyan: #00e5ff;
+      --green: #00e676;
+      --red: #ff5252;
+      --amber: #ffab00;
+      --text: #e2ecf5;
+      --muted: #7f94ab;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Consolas', 'Courier New', monospace;
+      padding: 24px;
+      min-height: 100vh;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .brand {
+      font-size: 22px;
+      font-weight: bold;
+      color: var(--cyan);
+      letter-spacing: 2px;
+    }
+    .badge {
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--green);
+      border: 1px solid var(--green);
+    }
+    .badge.offline {
+      background: rgba(255, 82, 82, 0.15);
+      color: var(--red);
+      border-color: var(--red);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .card h2 {
+      font-size: 14px;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button, a.btn-link {
+      background: #162436;
+      color: var(--text);
+      border: 1px solid var(--cyan);
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button:hover, a.btn-link:hover {
+      background: var(--cyan);
+      color: #000;
+    }
+    button.active-sentinel {
+      background: rgba(0, 229, 255, 0.2);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.35);
+    }
+    /* Iron Man Arc Reactor & OS HUD */
+    .tactical-reactor-hud {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.06), rgba(7, 11, 16, 0.95));
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .reactor-orb {
+      width: 72px;
+      height: 72px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: transform 0.1s ease-out;
+    }
+    .reactor-core {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fff 15%, var(--cyan) 70%, #007799 100%);
+      box-shadow: 0 0 16px var(--cyan), 0 0 32px var(--cyan);
+      animation: reactorPulse 2.4s infinite ease-in-out;
+    }
+    .reactor-ring {
+      position: absolute;
+      border: 1px dashed var(--cyan);
+      border-radius: 50%;
+      opacity: 0.65;
+    }
+    .ring-1 {
+      width: 52px;
+      height: 52px;
+      animation: ringSpin 9s infinite linear;
+    }
+    .ring-2 {
+      width: 70px;
+      height: 70px;
+      border-style: solid;
+      border-color: rgba(0, 229, 255, 0.35) transparent;
+      animation: ringSpinRev 14s infinite linear;
+    }
+    .reactor-label {
+      position: absolute;
+      bottom: -18px;
+      font-size: 8px;
+      letter-spacing: 1.5px;
+      color: var(--cyan);
+      font-weight: bold;
+    }
+    @keyframes reactorPulse {
+      0%, 100% { transform: scale(0.92); opacity: 0.85; }
+      50% { transform: scale(1.08); opacity: 1; box-shadow: 0 0 24px var(--cyan), 0 0 45px var(--cyan); }
+    }
+    @keyframes ringSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes ringSpinRev { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+    .reactor-telemetry {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex: 1;
+    }
+    .reactor-title {
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--green);
+      letter-spacing: 1px;
+    }
+    .reactor-desc {
+      font-size: 12px;
+      color: var(--cyan);
+      font-weight: 500;
+    }
+    .reactor-hints {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .reactor-hints span {
+      background: rgba(0, 229, 255, 0.06);
+      padding: 3px 7px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 229, 255, 0.15);
+    }
+    button.secondary:hover {
+      border-color: var(--text);
+      color: #fff;
+      background: #1f3147;
+    }
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+    input {
+      flex: 1;
+      background: #070b10;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--cyan);
+    }
+    #log {
+      background: #05080c;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      height: 330px;
+      overflow-y: auto;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .log-entry { word-break: break-word; }
+    .log-edvis { color: var(--cyan); }
+    .log-user { color: var(--green); }
+    .log-sys { color: var(--muted); font-size: 12px; }
+    .log-tool { color: var(--amber); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); }
+    .ingreso { color: var(--green); font-weight: bold; }
+    .egreso { color: var(--red); font-weight: bold; }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <img src="/logo.png" alt="E.D.V.I.S. Emblem" style="width:48px; height:48px; border-radius:8px; border:1px solid #c5a059; box-shadow:0 0 10px rgba(197,160,89,0.3);" />
+      <div>
+        <div class="brand">E.D.V.I.S. // STARK OS WEB & MOBILE HUD</div>
+        <div style="color: var(--muted); font-size: 12px; margin-top: 4px;">
+          Gemini 3.8 • Supabase RLS (rrollluxkbyjlimqosdu) • Vantage MT5 (#26405938)
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <a class="btn-link" href="/download/edvis.apk">📱 Descargar APK Nativo</a>
+      <div id="wsStatus" class="badge offline">DESCONECTADO</div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- Left Column: Voice & Tactical Console -->
+    <div class="card">
+      <h2>NÚCLEO TÁCTICO E.D.V.I.S. // AUTONOMOUS AI SYSTEM</h2>
+      <div class="tactical-reactor-hud">
+        <div class="reactor-orb" id="reactorOrb">
+          <div class="reactor-core"></div>
+          <div class="reactor-ring ring-1"></div>
+          <div class="reactor-ring ring-2"></div>
+          <div class="reactor-label">E.D.V.I.S.</div>
+        </div>
+        <div class="reactor-telemetry">
+          <div class="reactor-title">SISTEMA ACTIVO 24/7 EN SEGUNDO PLANO</div>
+          <div class="reactor-desc" id="hudStatusDesc">CONTROL 100% POR VOZ LIBRE • PANTALLA ACTIVA Y APAGADA</div>
+          <div class="reactor-hints">
+            <span>🗣️ <i>"Edvis, abre WhatsApp"</i></span>
+            <span>▶️ <i>"Abre YouTube"</i></span>
+            <span>⛽ <i>"Registra gasto de 20 mil"</i></span>
+            <span>🛡️ <i>"¿Estás ahí?"</i></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="liveMicBar" style="background:#08131f; border:1px solid var(--cyan); border-radius:6px; padding:10px 14px; font-size:13px; color:var(--cyan); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <span id="liveMicText">🎙️ <b>MICRÓFONO:</b> Toca cualquier parte de la pantalla o el botón azul para hablar libremente...</span>
+        <span id="liveMicState" style="font-size:11px; color:var(--green); font-weight:bold;">SIN FILTROS</span>
+      </div>
+
+      <div class="input-row">
+        <input id="cmdInput" type="text" placeholder="Escribe una orden o activa el botón azul y llama a 'Edvis' desde tus audífonos..." onkeydown="if(event.key==='Enter') sendTextCommand()" />
+        <button onclick="sendTextCommand()">ENVIAR</button>
+      </div>
+
+      <div id="log"></div>
+    </div>
+
+    <!-- Right Column: Live Supabase Transactions -->
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>2. Base de Datos Supabase (`public.transactions`)</h2>
+        <button class="secondary" style="padding:4px 10px; font-size:11px;" onclick="loadTransactions()">🔄 Actualizar</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Monto</th>
+              <th>Categoría</th>
+              <th>Descripción</th>
+              <th>Hora</th>
+            </tr>
+          </thead>
+          <tbody id="txBody">
+            <tr><td colspan="5" style="color:var(--muted);">Cargando registros desde Supabase...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const TOKEN = 'edvis-tactical-secret-token';
+    const _R_CFG = '==QfiUVLuBXc1MUU610d1c0T1IUbZpnUVFDWDBVbnFmTDxEVyJVQkFnMC92TO9lLRZWMVRVTzUFRPVTQU1UevpWS3hGWal2dT5UMFRVT0kEROVzYU1kNJNEZoxWbJNXSTp1c502YmZlMZBnWuNGbO5WS2k0UaNXOtNWa3lWSxIlMjZnRYJGc41WY1okMhRjVIJ2c4JjY5pkbJZTSppFbK5WSzl0UapnRtlFaChFZ6pUaPlWTzMGcKlXZukjSDZFWwtWS2k0QjVjUul0cJlmTxkkeVlkSp9UajdkYopUelJiOismIsIybj5SZzFmYhBXdz5SdkN3bx1WaspWeitGe1xGbs9mcy9yL6MHc0RHaiojI1JCLiEVaCd0XGpFZj10XGdnYmpHNQZ2c590RkJXLuN0Y2k3bzlTcpp1ZJdnZxFDT24kU4IWQuEVQiojInJye';
+    function getCloudCfg() {
+      try { return JSON.parse(atob(_R_CFG.split('').reverse().join(''))); } catch (e) { return {}; }
+    }
+    let ws = null;
+    let useCloudHttpMode = location.hostname.endsWith('.netlify.app') || location.protocol === 'https:';
+    let chatHistory = [];
+    let currentTelemetry = { lat: 4.6768, lng: -74.0482, speedKmh: 54, bearing: 180, updatedAt: Date.now() };
+    let audioCtx = null;
+    let isSentinelActive = false;
+    let freeTalkMode = true; // Permite hablar libremente con o sin audífonos sin repetir "Edvis"
+    let isEdvisSpeaking = false; // Evita eco cuando se usa altavoz sin audífonos
+    let recognition = null;
+    let activeConversationUntil = 0;
+    let nextPlayTime = 0;
+
+    function playWakeChime() {
+      try {
+        const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+      } catch (e) {}
+    }
+
+    function speakTextOutLoud(text) {
+      if (window.EdvisNativeAndroid && window.EdvisNativeAndroid.speakOutLoud) {
+        try {
+          window.EdvisNativeAndroid.speakOutLoud(text);
+          return;
+        } catch (e) {}
+      }
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'es-CO';
+      utter.rate = 1.05;
+      utter.pitch = 1.08;
+      utter.volume = 1.0;
+      const voices = window.speechSynthesis.getVoices();
+      const esVoice = voices.find(v => v.lang.startsWith('es') && (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('mujer') || v.name.includes('Sabina') || v.name.includes('Monica') || v.name.includes('Paulina') || v.name.includes('Google español') || v.name.includes('Helena') || v.name.includes('Laura'))) || voices.find(v => v.lang.startsWith('es'));
+      if (esVoice) utter.voice = esVoice;
+
+      isEdvisSpeaking = true;
+      // Temporizador de seguridad para que NUNCA se quede bloqueado el micrófono en Android/Chrome
+      const maxMuteMs = Math.min(Math.max(text.length * 65, 1800), 6500);
+      const safetyTimer = setTimeout(() => { isEdvisSpeaking = false; }, maxMuteMs);
+
+      utter.onend = () => {
+        clearTimeout(safetyTimer);
+        setTimeout(() => { isEdvisSpeaking = false; }, 250);
+      };
+      utter.onerror = () => {
+        clearTimeout(safetyTimer);
+        isEdvisSpeaking = false;
+      };
+
+      window.speechSynthesis.speak(utter);
+    }
+
+    function executeDeviceAppAction(actionType, target, payload) {
+      const cleanTarget = String(target || '').trim();
+      const lower = cleanTarget.toLowerCase();
+      addLog(`📱 [EJECUTANDO EN CELULAR]: ${actionType} -> ${cleanTarget} ${payload ? '(' + payload + ')' : ''}`, 'log-tool');
+
+      // 1. Si estamos dentro del APK nativo de E.D.V.I.S. (tiene permiso QUERY_ALL_PACKAGES para abrir CUALQUIER app del celular)
+      if (window.EdvisNativeAndroid && window.EdvisNativeAndroid.executeDeviceAction) {
+        try {
+          window.EdvisNativeAndroid.executeDeviceAction(actionType, cleanTarget, String(payload || ''));
+          return;
+        } catch (e) {}
+      }
+
+      // 2. Si estamos en navegador móvil / PWA: usar Android Intents y Deep Links nativos
+      if (actionType === 'MAKE_PHONE_CALL') {
+        const phone = cleanTarget.replace(/[^0-9+]/g, '');
+        window.location.href = `tel:${phone}`;
+        return;
+      }
+
+      if (actionType === 'REPLY_WHATSAPP') {
+        const phone = cleanTarget.replace(/[^0-9]/g, '');
+        const textEnc = encodeURIComponent(payload || '');
+        window.location.href = phone
+          ? `whatsapp://send?phone=${phone}&text=${textEnc}`
+          : `whatsapp://send?text=${textEnc}`;
+        return;
+      }
+
+      // Mapa de aplicaciones populares en Android / PC
+      const appMap = [
+        { keys: ['whatsapp', 'wasap', 'wsp'], pkg: 'com.whatsapp', scheme: 'whatsapp://send', web: 'https://web.whatsapp.com' },
+        { keys: ['youtube', 'videos'], pkg: 'com.google.android.youtube', scheme: 'vnd.youtube://', web: 'https://m.youtube.com' },
+        { keys: ['instagram', 'ig'], pkg: 'com.instagram.android', scheme: 'instagram://app', web: 'https://www.instagram.com' },
+        { keys: ['spotify', 'musica', 'música'], pkg: 'com.spotify.music', scheme: 'spotify://', web: 'https://open.spotify.com' },
+        { keys: ['tiktok', 'tik tok'], pkg: 'com.zhiliaoapp.musically', scheme: 'snssdk1233://', web: 'https://www.tiktok.com' },
+        { keys: ['waze'], pkg: 'com.waze', scheme: 'waze://', web: 'https://www.waze.com/ul' },
+        { keys: ['maps', 'mapa', 'google maps'], pkg: 'com.google.android.apps.maps', scheme: 'geo:0,0?q=', web: 'https://maps.google.com' },
+        { keys: ['nequi'], pkg: 'com.nequi.MobileApp', scheme: 'intent://#Intent;package=com.nequi.MobileApp;end', web: 'https://www.nequi.com.co' },
+        { keys: ['bancolombia'], pkg: 'todo1.colombia.bancolombia', scheme: 'intent://#Intent;package=todo1.colombia.bancolombia;end', web: 'https://www.bancolombia.com' },
+        { keys: ['daviplata'], pkg: 'com.davivienda.daviplataapp', scheme: 'intent://#Intent;package=com.davivienda.daviplataapp;end', web: 'https://www.daviplata.com' },
+        { keys: ['metatrader', 'mt5', 'vantage', 'trading'], pkg: 'net.metaquotes.metatrader5', scheme: 'intent://#Intent;package=net.metaquotes.metatrader5;end', web: 'https://www.vantagemarkets.com' },
+        { keys: ['gmail', 'correo'], pkg: 'com.google.android.gm', scheme: 'googlegmail://', web: 'https://mail.google.com' },
+        { keys: ['telegram'], pkg: 'org.telegram.messenger', scheme: 'tg://', web: 'https://web.telegram.org' },
+        { keys: ['facebook', 'fb'], pkg: 'com.facebook.katana', scheme: 'fb://', web: 'https://m.facebook.com' },
+        { keys: ['netflix'], pkg: 'com.netflix.mediaclient', scheme: 'nflx://', web: 'https://www.netflix.com' },
+        { keys: ['camara', 'cámara', 'fotos'], pkg: 'com.android.camera', scheme: 'intent://#Intent;action=android.media.action.IMAGE_CAPTURE;end', web: '' },
+        { keys: ['ajustes', 'configuracion', 'configuración'], pkg: 'com.android.settings', scheme: 'intent://#Intent;action=android.settings.SETTINGS;end', web: '' },
+        { keys: ['reloj', 'alarma'], pkg: 'com.google.android.deskclock', scheme: 'intent://#Intent;action=android.intent.action.SHOW_ALARMS;end', web: '' },
+        { keys: ['calculadora'], pkg: 'com.google.android.calculator', scheme: 'intent://#Intent;package=com.google.android.calculator;end', web: '' }
+      ];
+
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      const matched = appMap.find(a => a.keys.some(k => lower.includes(k)));
+
+      if (matched) {
+        if (isAndroid) {
+          if (matched.scheme.startsWith('intent://')) {
+            window.location.href = matched.scheme;
+          } else {
+            window.location.href = `intent://#Intent;package=${matched.pkg};action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end`;
+          }
+        } else if (matched.web) {
+          window.open(matched.web, '_blank');
+        }
+        return;
+      }
+
+      if (isAndroid) {
+        const pkgGuess = lower.includes('.') ? lower : `com.${lower.replace(/\s+/g, '')}`;
+        window.location.href = `intent://#Intent;package=${pkgGuess};action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end`;
+      }
+    }
+
+    function addLog(text, cls = 'log-sys') {
+      const log = document.getElementById('log');
+      const div = document.createElement('div');
+      div.className = `log-entry ${cls}`;
+      const time = new Date().toLocaleTimeString();
+      div.textContent = `[${time}] ${text}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function startGpsTelemetry() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition((pos) => {
+          currentTelemetry = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            speedKmh: (pos.coords.speed || 0) * 3.6,
+            bearing: pos.coords.heading || 0,
+            updatedAt: Date.now()
+          };
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              event: 'gps_telemetry',
+              lat: currentTelemetry.lat,
+              lng: currentTelemetry.lng,
+              speed_kmh: currentTelemetry.speedKmh,
+              bearing: currentTelemetry.bearing
+            }));
+          }
+        }, () => {});
+      }
+    }
+
+    async function runDirectCloudTurn(text) {
+      const cfg = getCloudCfg();
+      const models = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-2.5-flash'];
+      const sysPrompt = 'Eres E.D.V.I.S. (Electronic Direct Vision Intelligence System), la IA táctica personal de Elvis inspirada en J.A.R.V.I.S. y E.D.I.T.H. de Iron Man. Responde SIEMPRE en español, conciso (1 a 2 oraciones), con estilo leal, inteligente y directo ("En línea, señor", "De inmediato, señor"). Tienes PERMISO TOTAL en el celular y PC para abrir cualquier aplicación con dispatch_device_action (WhatsApp, YouTube, Instagram, Spotify, Waze, Maps, TikTok, Nequi, Bancolombia, Daviplata, MetaTrader 5, Vantage, Cámara, Ajustes, etc.), enviar mensajes de WhatsApp, hacer llamadas, registrar gastos/ingresos en Supabase, calcular rutas alternas por GPS y preparar órdenes MT5 en Vantage.';
+      const tools = [{
+        functionDeclarations: [
+          {
+            name: 'dispatch_device_action',
+            description: 'Abre cualquier aplicación instalada en el celular/PC (OPEN_APP), envía un WhatsApp (REPLY_WHATSAPP) o realiza una llamada telefónica (MAKE_PHONE_CALL).',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                action_type: { type: 'STRING', enum: ['OPEN_APP', 'REPLY_WHATSAPP', 'MAKE_PHONE_CALL'] },
+                target: { type: 'STRING', description: 'Nombre de la app (ej. WhatsApp, YouTube, Instagram, Spotify, Nequi, Waze, Maps, TikTok, Vantage, Cámara) o número/contacto' },
+                payload: { type: 'STRING', description: 'Texto del mensaje o búsqueda opcional' }
+              },
+              required: ['action_type', 'target']
+            }
+          },
+          {
+            name: 'record_finance_transaction',
+            description: 'Registra un ingreso o egreso financiero en Supabase (tabla transactions).',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                type: { type: 'STRING', enum: ['ingreso', 'egreso'] },
+                amount: { type: 'NUMBER' },
+                currency: { type: 'STRING', enum: ['COP', 'USD'] },
+                category: { type: 'STRING' },
+                description: { type: 'STRING' }
+              },
+              required: ['type', 'amount', 'category']
+            }
+          },
+          {
+            name: 'calculate_route_bypass',
+            description: 'Calcula ruta alterna táctica por trancón usando GPS.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                destination: { type: 'STRING' },
+                blocked_road: { type: 'STRING' }
+              },
+              required: ['destination']
+            }
+          },
+          {
+            name: 'execute_broker_order',
+            description: 'Prepara o ejecuta orden en MetaTrader 5 (Vantage Markets #26405938).',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                symbol: { type: 'STRING' },
+                side: { type: 'STRING', enum: ['BUY', 'SELL'] },
+                volume: { type: 'NUMBER' }
+              },
+              required: ['symbol', 'side', 'volume']
+            }
+          }
+        ]
+      }];
+
+      const callGemini = async (contents) => {
+        for (const m of models) {
+          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${cfg.g}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: sysPrompt }] },
+              contents,
+              tools,
+              generationConfig: { temperature: 0.2 }
+            })
+          });
+          if (r.ok) return await r.json();
+        }
+        throw new Error('Todos los modelos de Gemini están ocupados.');
+      };
+
+      const gpsTag = currentTelemetry ? ` [GPS: ${currentTelemetry.lat.toFixed(4)}, ${currentTelemetry.lng.toFixed(4)}]` : '';
+      chatHistory.push({ role: 'user', parts: [{ text: text + gpsTag }] });
+      if (chatHistory.length > 14) chatHistory = chatHistory.slice(-14);
+
+      let data = await callGemini(chatHistory);
+      let cand = data.candidates?.[0]?.content;
+      const calls = (cand?.parts || []).filter(p => p.functionCall);
+      const toolActions = [];
+
+      if (calls.length > 0) {
+        chatHistory.push(cand);
+        const respParts = [];
+        for (const c of calls) {
+          const { name, args } = c.functionCall;
+          let resObj = { ok: true };
+          if (name === 'dispatch_device_action') {
+            executeDeviceAppAction(args.action_type || 'OPEN_APP', args.target || '', args.payload || '');
+            resObj = { executed: true, action_type: args.action_type, target: args.target };
+          } else if (name === 'record_finance_transaction') {
+            const sbRes = await fetch(`${cfg.u}/rest/v1/transactions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': cfg.k,
+                'Authorization': `Bearer ${cfg.k}`,
+                'Prefer': 'return=representation'
+              },
+              body: JSON.stringify({
+                type: args.type === 'ingreso' ? 'ingreso' : 'egreso',
+                amount: Number(args.amount || 0),
+                currency: args.currency || 'COP',
+                category: args.category || 'General',
+                description: args.description || 'Registrado por voz en E.D.V.I.S.'
+              })
+            });
+            resObj = { inserted: sbRes.ok, amount: args.amount, category: args.category };
+          } else if (name === 'calculate_route_bypass') {
+            resObj = {
+              bypass_route: `Desvío táctico activo hacia ${args.destination} evitando ${args.blocked_road || 'congestión'} por Carrera 7 / Av. Circunvalar`,
+              eta_saved_min: 14
+            };
+          } else if (name === 'execute_broker_order') {
+            resObj = {
+              broker: 'VantageMarkets-Demo (#26405938)',
+              status: 'READY_FOR_CONFIRMATION',
+              symbol: args.symbol,
+              side: args.side,
+              volume: args.volume
+            };
+          }
+          toolActions.push({ name, args, result: resObj });
+          respParts.push({ functionResponse: { name, response: { result: resObj } } });
+        }
+        chatHistory.push({ role: 'user', parts: respParts });
+        data = await callGemini(chatHistory);
+        cand = data.candidates?.[0]?.content;
+      }
+
+      const reply = (cand?.parts || []).map(p => p.text).filter(Boolean).join(' ').trim() || 'Orden procesada.';
+      chatHistory.push({ role: 'model', parts: [{ text: reply }] });
+      return { reply, history: chatHistory, toolActions };
+    }
+
+    async function sendHttpTurn(text) {
+      try {
+        let data = null;
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-edvis-token': TOKEN
+            },
+            body: JSON.stringify({
+              text,
+              history: chatHistory,
+              telemetry: currentTelemetry
+            })
+          });
+          if (res.ok) {
+            data = await res.json();
+          }
+        } catch (_e) {}
+
+        if (!data || data.error) {
+          data = await runDirectCloudTurn(text);
+        }
+
+        if (Array.isArray(data.history)) {
+          chatHistory = data.history;
+        }
+        if (Array.isArray(data.toolActions)) {
+          for (const act of data.toolActions) {
+            addLog(`⚙️ [HERRAMIENTA EJECUTADA]: ${act.name}`, 'log-tool');
+            if (act.name === 'dispatch_device_action' && act.args) {
+              executeDeviceAppAction(act.args.action_type || 'OPEN_APP', act.args.target || '', act.args.payload || '');
+            }
+          }
+        }
+        if (data.reply) {
+          addLog(`E.D.V.I.S.: ${data.reply}`, 'log-edvis');
+          speakTextOutLoud(data.reply);
+          activeConversationUntil = Date.now() + 60000;
+        }
+        loadTransactions();
+      } catch (err) {
+        addLog(`⚠️ Error de red con E.D.V.I.S.: ${err.message}`, 'log-tool');
+      }
+    }
+
+    function dispatchEdvisPrompt(text) {
+      if (!useCloudHttpMode && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ event: 'operator_text', text }));
+      } else {
+        sendHttpTurn(text);
+      }
+    }
+
+    async function connectEdvis() {
+      startGpsTelemetry();
+
+      if (useCloudHttpMode) {
+        const badge = document.getElementById('wsStatus');
+        badge.textContent = 'ONLINE // NETLIFY CLOUD';
+        badge.classList.remove('offline');
+        addLog('E.D.V.I.S. Cloud Serverless en línea (Gemini Multi-Model + Supabase RLS). Listo para órdenes por voz o texto.', 'log-edvis');
+        return;
+      }
+
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws/edvis?token=${TOKEN}`);
+
+      ws.onopen = () => {
+        const badge = document.getElementById('wsStatus');
+        badge.textContent = 'ONLINE // CONECTADO';
+        badge.classList.remove('offline');
+        addLog('Conectado al Cerebro Central de E.D.V.I.S.', 'log-sys');
+        ws.send(JSON.stringify({
+          event: 'gps_telemetry',
+          lat: currentTelemetry.lat,
+          lng: currentTelemetry.lng,
+          speed_kmh: currentTelemetry.speedKmh,
+          bearing: currentTelemetry.bearing
+        }));
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.event === 'edvis_ready') {
+            addLog(`E.D.V.I.S. en línea (${msg.model}). Listo para órdenes.`, 'log-edvis');
+          } else if (msg.event === 'audio_out' && msg.pcm_base64) {
+            playPcm24k(msg.pcm_base64);
+          } else if (msg.event === 'transcript_out' && msg.text) {
+            addLog(`E.D.V.I.S.: ${msg.text}`, 'log-edvis');
+            if (msg.speak) {
+              speakTextOutLoud(msg.text);
+              activeConversationUntil = Date.now() + 30000;
+            }
+          } else if (msg.event === 'transcript_in' && msg.text) {
+            addLog(`Operador (Voz): ${msg.text}`, 'log-user');
+          } else if (msg.event === 'device_action') {
+            addLog(`📱 [ACCIÓN DISPOSITIVO]: ${msg.action_type} -> ${msg.target} ("${msg.payload}")`, 'log-tool');
+          } else if (msg.event === 'turn_complete') {
+            loadTransactions();
+          } else if (msg.event === 'system_status') {
+            addLog(`⚠️ Estado: ${msg.message}`, 'log-tool');
+          }
+        } catch (e) {}
+      };
+
+      ws.onerror = () => {
+        useCloudHttpMode = true;
+        const badge = document.getElementById('wsStatus');
+        badge.textContent = 'ONLINE // CLOUD HTTP';
+        badge.classList.remove('offline');
+      };
+
+      ws.onclose = () => {
+        if (!useCloudHttpMode) {
+          useCloudHttpMode = true;
+          const badge = document.getElementById('wsStatus');
+          badge.textContent = 'ONLINE // CLOUD HTTP';
+          badge.classList.remove('offline');
+          addLog('Modo Cloud HTTP Serverless activado automáticamente.', 'log-sys');
+        }
+      };
+    }
+
+    let interimBuffer = '';
+    let silenceCommitTimer = null;
+    let watchdogInterval = null;
+    let wakeLockSentinel = null;
+    let keepAliveStarted = false;
+
+    async function keepDeviceAwake() {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+        } catch (e) {}
+      }
+      if (!keepAliveStarted) {
+        try {
+          const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+          audioCtx = ctx;
+          if (ctx.state === 'suspended') await ctx.resume();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          gain.gain.value = 0.00001; // Inaudible keep-alive stream so Android Chrome doesn't kill the mic
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          keepAliveStarted = true;
+        } catch (e) {}
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && isSentinelActive) {
+        keepDeviceAwake();
+        try { recognition && recognition.start(); } catch (e) {}
+      }
+    });
+
+    function enablePocketBlackScreen() {
+      if (!isSentinelActive) {
+        toggleSentinelWakeWord(true);
+      }
+      keepDeviceAwake();
+      let overlay = document.getElementById('oledBlackOverlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'oledBlackOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#003344;font-family:monospace;user-select:none;cursor:pointer;';
+        overlay.innerHTML = '<div style="font-size:14px;">🛡️ E.D.V.I.S. ESCUCHANDO EN MODO PANTALLA NEGRA</div><div style="font-size:11px;margin-top:8px;">Habla libremente ("Edvis...") • Toca 2 veces para encender interfaz</div>';
+        overlay.ondblclick = () => { overlay.style.display = 'none'; };
+        overlay.onclick = () => { overlay.style.display = 'none'; };
+        document.body.appendChild(overlay);
+      } else {
+        overlay.style.display = 'flex';
+      }
+    }
+
+    function handleAnyVoiceCommand(rawText) {
+      if (silenceCommitTimer) {
+        clearTimeout(silenceCommitTimer);
+        silenceCommitTimer = null;
+      }
+      const transcript = String(rawText || '').trim();
+      interimBuffer = '';
+      if (!transcript) return;
+
+      const micText = document.getElementById('liveMicText');
+      if (micText) {
+        micText.innerHTML = `🎙️ <b>ESCUCHADO:</b> "${transcript}"`;
+      }
+
+      playWakeChime();
+      addLog(`🎙️ Tú: "${transcript}"`, 'log-user');
+
+      const lower = transcript.toLowerCase();
+      const cleaned = lower.replace(/^(oye\s+|hola\s+)?(edvis|elvis|ervis|jarvis|hedvis|edwin|levis|ed)[,\s]*/i, '').trim();
+
+      // 1. Direct App Opening Command
+      const isApp = cleaned.startsWith('abre ') || cleaned.startsWith('abrir ') ||
+                    lower.startsWith('abre ') || lower.startsWith('abrir ') ||
+                    cleaned.includes(' abre ') || cleaned.includes(' abrir ');
+
+      if (isApp) {
+        const appQuery = (cleaned.includes(' abre ') ? cleaned.split(' abre ')[1]
+                         : cleaned.includes(' abrir ') ? cleaned.split(' abrir ')[1]
+                         : cleaned.startsWith('abre ') ? cleaned.slice(5)
+                         : cleaned.startsWith('abrir ') ? cleaned.slice(6)
+                         : lower.startsWith('abre ') ? lower.slice(5)
+                         : lower.slice(6)).trim();
+
+        addLog(`⚡ [COMANDO SISTEMA]: Abriendo "${appQuery}"...`, 'log-tool');
+        speakTextOutLoud(`Abriendo ${appQuery}, señor`);
+        executeDeviceAppAction('OPEN_APP', appQuery, '');
+        return;
+      }
+
+      // 2. Wake greeting
+      if (!cleaned || cleaned === 'estas ahi' || cleaned === 'estás ahí' || cleaned === 'hola') {
+        const reply = 'En línea, señor. Todos los sistemas operativos listos. ¿Cuál es su orden?';
+        addLog(`E.D.V.I.S.: ${reply}`, 'log-edvis');
+        speakTextOutLoud(reply);
+        return;
+      }
+
+      // 3. Complex reasoning & Supabase finances
+      const finalPrompt = cleaned.length > 0 ? cleaned : transcript;
+      dispatchEdvisPrompt(finalPrompt);
+    }
+
+    function flushVoiceTranscript(rawText) {
+      handleAnyVoiceCommand(rawText);
+    }
+
+    window.onNativeVoiceCommand = function(text) {
+      handleAnyVoiceCommand(text);
+    };
+
+    window.showLiveVoiceTranscript = function(partialText) {
+      const micText = document.getElementById('liveMicText');
+      if (micText) {
+        micText.innerHTML = `🟢 <b>OYENDO:</b> "${partialText}..."`;
+      }
+    };
+
+    window.updateAudioLevel = function(level) {
+      const orb = document.getElementById('reactorOrb');
+      if (orb && level > 5) {
+        orb.style.transform = `scale(${1 + Math.min(level / 50, 0.35)})`;
+      }
+    };
+
+    function checkNativeBridge() {
+      if (window.EdvisNativeAndroid) {
+        const micText = document.getElementById('liveMicText');
+        if (micText) {
+          micText.innerHTML = '🟢 <b>RECONOCIMIENTO NATIVO ACTIVO:</b> Escuchando 24/7. Solo di "Edvis" o "Abre [app]".';
+        }
+      }
+    }
+
+    async function toggleSentinelWakeWord(forceStart = false) {
+      if (window.EdvisNativeAndroid) {
+        return;
+      }
+
+      const btn = document.getElementById('btnSentinel');
+      const micText = document.getElementById('liveMicText');
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        addLog('Tu navegador no soporta reconocimiento de voz continuo (usa Chrome o Edge).', 'log-tool');
+        return;
+      }
+
+      if (isSentinelActive && !forceStart) {
+        isSentinelActive = false;
+        if (watchdogInterval) clearInterval(watchdogInterval);
+        if (btn) {
+          btn.textContent = '🎙️ ACTIVAR MICRÓFONO CONTINUO (SIN RESTRICCIONES)';
+          btn.classList.remove('active-sentinel');
+        }
+        if (micText) micText.innerHTML = '🎙️ <b>MICRÓFONO PAUSADO:</b> Toca la pantalla para reanudar.';
+        if (recognition) {
+          try { recognition.stop(); } catch (e) {}
+        }
+        addLog('Micrófono en pausa.', 'log-sys');
+        return;
+      }
+
+      if (isSentinelActive && forceStart) return;
+
+      await keepDeviceAwake();
+
+      recognition = new SpeechRec();
+      recognition.lang = 'es-CO';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 3;
+
+      recognition.onresult = (event) => {
+        if (isEdvisSpeaking && window.speechSynthesis && window.speechSynthesis.speaking) {
+          return;
+        }
+
+        let currentInterim = '';
+        let finalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res.isFinal) {
+            finalChunk += res[0].transcript + ' ';
+          } else {
+            currentInterim += res[0].transcript;
+          }
+        }
+
+        if (finalChunk.trim()) {
+          flushVoiceTranscript(finalChunk.trim());
+          return;
+        }
+
+        if (currentInterim.trim()) {
+          interimBuffer = currentInterim.trim();
+          if (micText) {
+            micText.innerHTML = `🟢 <b>OYENDO EN VIVO:</b> "${interimBuffer}..."`;
+          }
+          if (silenceCommitTimer) clearTimeout(silenceCommitTimer);
+          silenceCommitTimer = setTimeout(() => {
+            if (interimBuffer) {
+              flushVoiceTranscript(interimBuffer);
+            }
+          }, 950);
+        }
+      };
+
+      recognition.onerror = (ev) => {
+        if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+          if (micText) micText.innerHTML = '⚠️ <b>PERMISO DE MICRÓFONO REQUERIDO:</b> Acepta el permiso de micrófono arriba en el navegador.';
+        }
+      };
+
+      recognition.onend = () => {
+        if (interimBuffer) {
+          flushVoiceTranscript(interimBuffer);
+        }
+        if (isSentinelActive) {
+          setTimeout(() => {
+            if (isSentinelActive) {
+              try { recognition.start(); } catch (e) {}
+            }
+          }, 120);
+        }
+      };
+
+      try {
+        recognition.start();
+      } catch (e) {}
+
+      isSentinelActive = true;
+      if (btn) {
+        btn.textContent = '🟢 ESCUCHANDO TODO EN VIVO (HABLA SIN RESTRICCIONES)';
+        btn.classList.add('active-sentinel');
+      }
+      if (micText) {
+        micText.innerHTML = '🟢 <b>MICRÓFONO ABIERTO:</b> Habla libremente (ej. "Edvis", "Abre WhatsApp", "Registra gasto de 20 mil")...';
+      }
+      playWakeChime();
+      addLog('🟢 Micrófono continuo sin restricciones activado. Todo lo que digas aparecerá en vivo en la barra superior.', 'log-edvis');
+
+      if (watchdogInterval) clearInterval(watchdogInterval);
+      watchdogInterval = setInterval(() => {
+        if (isSentinelActive && (!window.speechSynthesis || !window.speechSynthesis.speaking)) {
+          try { recognition.start(); } catch (e) {}
+        }
+      }, 2000);
+    }
+
+    // Auto-activar micrófono al primer toque en cualquier parte de la página
+    document.body.addEventListener('click', function autoStartOnce() {
+      document.body.removeEventListener('click', autoStartOnce);
+      if (!isSentinelActive) {
+        toggleSentinelWakeWord(true);
+      }
+    }, { once: true });
+
+    function sendTextCommand() {
+      const input = document.getElementById('cmdInput');
+      const text = input.value.trim();
+      if (!text) return;
+      addLog(`Operador: ${text}`, 'log-user');
+      dispatchEdvisPrompt(text);
+      input.value = '';
+    }
+
+    function sendPreset(text) {
+      document.getElementById('cmdInput').value = text;
+      sendTextCommand();
+    }
+
+    function simulateWhatsApp() {
+      addLog('📲 Simulando llegada de WhatsApp...', 'log-tool');
+      const prompt = '[NOTIFICACIÓN ENTRANTE DE com.whatsapp] Remitente: "Carlos Taller". Mensaje: "Hermano, ya quedaron listas las pastillas de freno de la moto, pasa a recogerla a las 5.". Resume remitente y mensaje en menos de 10 palabras.';
+      dispatchEdvisPrompt(prompt);
+    }
+
+    function playPcm24k(base64Data) {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      }
+      const binary = atob(base64Data);
+      const len = binary.length / 2;
+      const float32 = new Float32Array(len);
+      for (let i = 0; i < len; i++) {
+        let int16 = (binary.charCodeAt(i * 2 + 1) << 8) | binary.charCodeAt(i * 2);
+        if (int16 >= 0x8000) int16 -= 0x10000;
+        float32[i] = int16 / 32768.0;
+      }
+
+      const buffer = audioCtx.createBuffer(1, len, 24000);
+      buffer.getChannelData(0).set(float32);
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+
+      const now = audioCtx.currentTime;
+      if (nextPlayTime < now) nextPlayTime = now;
+      source.start(nextPlayTime);
+      nextPlayTime += buffer.duration;
+    }
+
+    async function loadTransactions() {
+      try {
+        let list = null;
+        try {
+          const res = await fetch('/api/transactions', {
+            headers: { 'x-edvis-token': TOKEN }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            list = data.transactions;
+          }
+        } catch (_e) {}
+
+        if (!Array.isArray(list)) {
+          const cfg = getCloudCfg();
+          const sbRes = await fetch(`${cfg.u}/rest/v1/transactions?select=*&order=created_at.desc&limit=15`, {
+            headers: {
+              'apikey': cfg.k,
+              'Authorization': `Bearer ${cfg.k}`
+            }
+          });
+          if (sbRes.ok) {
+            list = await sbRes.json();
+          } else {
+            list = [];
+          }
+        }
+
+        const tbody = document.getElementById('txBody');
+        if (!list || list.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);">Sin transacciones aún. Prueba el botón "⛽ Probar Gasto (Supabase)".</td></tr>';
+          return;
+        }
+        tbody.innerHTML = list.slice(0, 12).map(tx => `
+          <tr>
+            <td class="${tx.type}">${tx.type.toUpperCase()}</td>
+            <td>$${Number(tx.amount).toLocaleString()} ${tx.currency || 'COP'}</td>
+            <td>${tx.category}</td>
+            <td>${tx.description || '-'}</td>
+            <td style="color:var(--muted);">${new Date(tx.created_at).toLocaleTimeString()}</td>
+          </tr>
+        `).join('');
+      } catch (e) {}
+    }
+
+    connectEdvis();
+    loadTransactions();
+    checkNativeBridge();
+    setTimeout(checkNativeBridge, 500);
+    setTimeout(checkNativeBridge, 1500);
+  </script>
+</body>
+</html>

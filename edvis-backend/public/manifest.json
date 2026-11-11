@@ -1,0 +1,21 @@
+{
+  "name": "E.D.V.I.S. Tactical Intelligence",
+  "short_name": "E.D.V.I.S.",
+  "description": "Electronic Direct Vision Intelligence System - Stark OS Web & Mobile HUD",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070b10",
+  "theme_color": "#00e5ff",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
