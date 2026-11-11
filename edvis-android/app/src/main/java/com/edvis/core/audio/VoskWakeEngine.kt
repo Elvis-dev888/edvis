@@ -132,15 +132,21 @@ class VoskWakeEngine(
                             return true
                         } else {
                             val words = text.split(Regex("\\s+"))
-                            if (words.size <= 3 && (
-                                    text == "si" || text == "sí" || text == "no" || text == "claro" ||
-                                    text == "dale" || text == "contesta" || text == "cuelga" ||
-                                    text == "leelo" || text == "léelo" || text == "leeme" || text == "léeme" ||
-                                    text == "reproduce" || text == "reproducir" ||
-                                    text == "edvis" || text == "elvis" || text == "ervis" ||
-                                    text == "jarvis" || text == "edwin" || text == "oye" ||
-                                    text == "oye elvis" || text == "oye edvis" || text == "hola"
-                                )) {
+                            val isImmediateCommand = (words.size in 1..4) && (
+                                text == "si" || text == "sí" || text == "no" || text == "claro" ||
+                                text == "dale" || text == "contesta" || text == "cuelga" ||
+                                text == "leelo" || text == "léelo" || text == "leeme" || text == "léeme" ||
+                                text == "reproduce" || text == "reproducir" ||
+                                text == "edvis" || text == "elvis" || text == "ervis" ||
+                                text == "jarvis" || text == "edwin" || text == "oye" ||
+                                text == "oye elvis" || text == "oye edvis" || text == "hola" ||
+                                text.startsWith("abre ") || text.startsWith("ábreme ") || text.startsWith("abreme ") ||
+                                text.contains("linterna") || text.contains("pon musica") || text.contains("pon música") ||
+                                text.contains("sube el volumen") || text.contains("baja el volumen") ||
+                                text.contains("que hora es") || text.contains("dime la hora") ||
+                                text.contains("donde estoy")
+                            )
+                            if (isImmediateCommand) {
                                 rec.reset()
                                 onWakeWordDetected(text)
                                 return true

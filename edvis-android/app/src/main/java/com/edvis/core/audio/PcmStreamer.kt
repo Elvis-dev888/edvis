@@ -32,6 +32,21 @@ class PcmStreamer(
         const val INPUT_SAMPLE_RATE = 16000
         const val OUTPUT_SAMPLE_RATE = 24000 // Gemini 3.8 Live output PCM rate
         private const val ACTIVE_WINDOW_MS = 25_000L
+
+        /**
+         * Applies software digital pre-amplification to 16-bit PCM mono audio so the user
+         * can speak at normal conversational volume (or from a distance) without shouting.
+         */
+        fun applySoftwareGain(pcmBytes: ByteArray, length: Int, gainFactor: Float = 2.2f) {
+            var i = 0
+            while (i < length - 1) {
+                val sample = ((pcmBytes[i + 1].toInt() shl 8) or (pcmBytes[i].toInt() and 0xFF)).toShort()
+                val amplified = (sample * gainFactor).toInt().coerceIn(-32768, 32767)
+                pcmBytes[i] = (amplified and 0xFF).toByte()
+                pcmBytes[i + 1] = ((amplified shr 8) and 0xFF).toByte()
+                i += 2
+            }
+        }
     }
 
     private var audioRecord: AudioRecord? = null
@@ -126,6 +141,7 @@ class PcmStreamer(
             while (isActive) {
                 val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                 if (read > 0) {
+                    applySoftwareGain(buffer, read, 2.2f)
                     val isTtsSpeaking = EdvisForegroundService.instance?.isTtsSpeaking() == true
                     val isWindowActive = isVoiceWindowActive()
 

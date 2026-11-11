@@ -191,7 +191,15 @@ class EdvisForegroundService : Service() {
 
     fun speakInFemaleVoice(text: String) {
         ensureAdequateVolume()
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "edvis_female_voice")
+        val currentTts = tts
+        if (currentTts != null) {
+            currentTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "edvis_female_voice")
+        } else {
+            initFemaleTts()
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "edvis_female_voice")
+            }, 600L)
+        }
     }
 
     fun activateVoiceListeningWindow(durationMs: Long = 30_000L) {
@@ -434,7 +442,10 @@ class EdvisForegroundService : Service() {
         } catch (_: Exception) {}
 
         val lower = spokenText.lowercase().trim()
-        val cleaned = lower.replace(Regex("^(oye\\s+|hola\\s+)?(edvis|elvis|ervis|edwin|jarvis|ed)[,\\s]*", RegexOption.IGNORE_CASE), "").trim()
+        var cleaned = lower.replace(Regex("^(oye\\s+|hola\\s+)?(edvis|elvis|ervis|edwin|jarvis|ed)[,\\s]*", RegexOption.IGNORE_CASE), "").trim()
+        cleaned = cleaned.replace(Regex("[,\\s]+(edvis|elvis|ervis|edwin|jarvis)$", RegexOption.IGNORE_CASE), "").trim()
+        cleaned = cleaned.replace(Regex("^(por\\s+favor|por\\s+fa)\\s+"), "").trim()
+        cleaned = cleaned.replace(Regex("\\s+(por\\s+favor|por\\s+fa)$"), "").trim()
 
         // 1. Phone Call Interception Handling (Answer / Reject)
         if (isCallRinging) {
