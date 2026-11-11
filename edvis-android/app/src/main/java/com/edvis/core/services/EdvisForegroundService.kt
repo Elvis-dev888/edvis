@@ -630,20 +630,81 @@ class EdvisForegroundService : Service() {
             return
         }
 
-        // 5. System App Launching
-        val isAppOpen = cleaned.startsWith("abre ") || cleaned.startsWith("abrir ") ||
-            lower.startsWith("abre ") || lower.startsWith("abrir ") ||
-            cleaned.contains(" abre ") || cleaned.contains(" abrir ")
+        // 5. Intelligent System App Launching
+        // Matches: "abre...", "abrir...", "ábreme...", "inicia...", "entra a...", "pon..."
+        // Or direct app names: "whatsapp", "youtube", "spotify", "camara", "cámara", "instagram", "tiktok", "facebook", "maps", "waze", "nequi", "calculadora", "ajustes", "configuracion", "reloj"
+        val knownApps = listOf(
+            "whatsapp", "wasap", "wsp", "youtube", "spotify", "musica", "música",
+            "camara", "cámara", "fotos", "galeria", "galería", "instagram", "facebook",
+            "tiktok", "maps", "mapas", "mapa", "waze", "nequi", "calculadora",
+            "ajustes", "configuracion", "configuración", "reloj", "alarma", "telegram", "netflix"
+        )
 
-        if (isAppOpen) {
-            val appQuery = (if (cleaned.contains(" abre ")) cleaned.substringAfter(" abre ")
-                else if (cleaned.contains(" abrir ")) cleaned.substringAfter(" abrir ")
-                else if (cleaned.startsWith("abre ")) cleaned.substringAfter("abre ")
-                else if (cleaned.startsWith("abrir ")) cleaned.substringAfter("abrir ")
-                else if (lower.startsWith("abre ")) lower.substringAfter("abre ")
-                else lower.substringAfter("abrir ")).trim()
-            speakInFemaleVoice("Abriendo $appQuery, señor")
-            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, appQuery)
+        var detectedApp: String? = null
+        val openPrefixes = listOf(
+            "abre la aplicación de ", "abre la aplicacion de ", "abre la app de ",
+            "abrir la aplicación de ", "abrir la aplicacion de ", "abrir la app de ",
+            "ábreme la aplicación de ", "abreme la aplicacion de ", "ábreme la app de ", "abreme la app de ",
+            "ábreme el ", "abreme el ", "ábreme la ", "abreme la ", "ábreme ", "abreme ",
+            "abre el ", "abre la ", "abre los ", "abre las ", "abre mi ", "abre ",
+            "abrir el ", "abrir la ", "abrir los ", "abrir las ", "abrir mi ", "abrir ",
+            "inicia el ", "inicia la ", "inicia ", "iniciar ",
+            "entra a el ", "entra al ", "entra a la ", "entra a ", "entrar a ",
+            "lanzar ", "lanza ", "ejecuta ", "ejecutar "
+        )
+
+        for (prefix in openPrefixes) {
+            if (cleaned.startsWith(prefix) || lower.startsWith(prefix)) {
+                detectedApp = (if (cleaned.startsWith(prefix)) cleaned.substring(prefix.length) else lower.substring(prefix.length)).trim()
+                break
+            } else if (cleaned.contains(" $prefix")) {
+                detectedApp = cleaned.substringAfter(" $prefix").trim()
+                break
+            }
+        }
+
+        // Direct app name shouted (e.g. "edvis whatsapp", "edvis youtube", "cámara", etc.)
+        if (detectedApp.isNullOrBlank()) {
+            for (app in knownApps) {
+                if (cleaned == app || cleaned == "el $app" || cleaned == "la $app" || cleaned == "mi $app") {
+                    detectedApp = app
+                    break
+                }
+            }
+        }
+
+        if (!detectedApp.isNullOrBlank()) {
+            val appQuery = detectedApp.replace(Regex("^(el|la|los|las|mi|un|una)\\s+"), "").trim()
+            speakInFemaleVoice("Abriendo $appQuery, señor.")
+            val launched = EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, appQuery)
+            if (!launched) {
+                EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, detectedApp)
+            }
+            return
+        }
+
+        // 5.1 Reloj y Hora Actual
+        if (cleaned.contains("que hora es") || cleaned.contains("qué hora es") ||
+            cleaned.contains("dime la hora") || cleaned.contains("hora actual") || cleaned == "hora") {
+            val now = java.text.SimpleDateFormat("h:mm a", Locale("es", "CO")).format(java.util.Date())
+            speakInFemaleVoice("Son las $now, señor.")
+            return
+        }
+
+        // 5.2 Fecha Actual
+        if (cleaned.contains("que dia es") || cleaned.contains("qué día es") ||
+            cleaned.contains("que fecha es") || cleaned.contains("qué fecha es") ||
+            cleaned.contains("fecha de hoy")) {
+            val today = java.text.SimpleDateFormat("EEEE, d 'de' MMMM", Locale("es", "CO")).format(java.util.Date())
+            speakInFemaleVoice("Hoy es $today, señor.")
+            return
+        }
+
+        // 5.3 Identidad del Asistente
+        if (cleaned.contains("quien eres") || cleaned.contains("quién eres") ||
+            cleaned.contains("como te llamas") || cleaned.contains("cómo te llamas") ||
+            cleaned.contains("que eres") || cleaned.contains("qué eres")) {
+            speakInFemaleVoice("Soy E.D.V.I.S., su sistema táctico de inteligencia artificial personal.")
             return
         }
 
@@ -757,14 +818,17 @@ class EdvisForegroundService : Service() {
         serviceScope.launch(Dispatchers.IO) {
             try {
                 val prompt = if (cleaned.isNotEmpty()) cleaned else spokenText
-                val geminiKey = System.getenv("GEMINI_API_KEY") ?: ""
-                val sbUrl = System.getenv("SUPABASE_URL") ?: "https://rrollluxkbyjlimqosdu.supabase.co"
-                val sbKey = System.getenv("SUPABASE_KEY") ?: ""
+                val geminiKey = String(android.util.Base64.decode(
+                    "QVEuQWI4Uk42TDFxZndJZ1ppcTlzb3k2Y0NuLXJkR095c2ZQNHpmYndGX01jZFpGX0dCaVE=",
+                    android.util.Base64.DEFAULT
+                )).trim()
+                val sbUrl = "https://rrollluxkbyjlimqosdu.supabase.co"
+                val sbKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2xsbHV4a2J5amxpbXFvc2R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5NDI4MTE1NSwiZXhwIjoyMTA5ODU3MTU1fQ._NOoB2qdARrTLCNagmPCX1URzYmB5OG5wMzQC5qpn-U"
 
                 val jsonBody = JSONObject().apply {
                     put("systemInstruction", JSONObject().apply {
                         put("parts", org.json.JSONArray().put(JSONObject().apply {
-                            put("text", "Eres E.D.V.I.S., asistente táctico personal de Elvis inspirado en JARVIS de Iron Man. Responde en español, conciso (máximo 2 oraciones), tono táctico. Tienes permiso total para abrir cualquier app o registrar gastos/ingresos.")
+                            put("text", "Eres E.D.V.I.S., asistente táctico personal de Elvis inspirado en JARVIS de Iron Man. Responde siempre en español, conciso (máximo 2 oraciones), tono táctico y seguro. Si el usuario pide abrir una app o hacer una llamada, utiliza obligatoriamente la función dispatch_device_action.")
                         }))
                     })
                     put("contents", org.json.JSONArray().put(JSONObject().apply {
@@ -777,7 +841,7 @@ class EdvisForegroundService : Service() {
                         put("functionDeclarations", org.json.JSONArray().apply {
                             put(JSONObject().apply {
                                 put("name", "dispatch_device_action")
-                                put("description", "Abre una app o realiza llamadas")
+                                put("description", "Abre una aplicación en el teléfono o realiza llamadas")
                                 put("parameters", JSONObject().apply {
                                     put("type", "OBJECT")
                                     put("properties", JSONObject().apply {
@@ -805,14 +869,19 @@ class EdvisForegroundService : Service() {
                     }))
                 }.toString()
 
-                val client = OkHttpClient()
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(12, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(18, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+
                 val req = Request.Builder()
-                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiKey")
+                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=$geminiKey")
                     .post(jsonBody.toRequestBody("application/json".toMediaType()))
                     .build()
 
                 val resp = client.newCall(req).execute()
                 val respStr = resp.body?.string() ?: ""
+                Log.i(TAG, "Gemini 3.8 Flash HTTP ${resp.code}: $respStr")
                 val respJson = JSONObject(respStr)
 
                 val candidate = respJson.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")
@@ -828,8 +897,14 @@ class EdvisForegroundService : Service() {
                             val args = fn.optJSONObject("args")
                             if (fnName == "dispatch_device_action") {
                                 val target = args?.optString("target", "") ?: ""
-                                EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, target)
-                                spokenReply = "Abriendo $target, señor."
+                                val actionType = args?.optString("action_type", "OPEN_APP") ?: "OPEN_APP"
+                                if (actionType.contains("CALL", ignoreCase = true)) {
+                                    makeDirectPhoneCall(target)
+                                    return@launch
+                                } else {
+                                    EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, target)
+                                    spokenReply = "Abriendo $target, señor."
+                                }
                             } else if (fnName == "record_finance_transaction") {
                                 val amount = args?.optDouble("amount", 0.0) ?: 0.0
                                 val category = args?.optString("category", "General") ?: "General"
@@ -864,14 +939,28 @@ class EdvisForegroundService : Service() {
                 }
 
                 if (spokenReply.isBlank()) {
-                    spokenReply = "Orden procesada, señor."
+                    val launched = EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, prompt)
+                    if (launched) {
+                        spokenReply = "Abriendo $prompt, señor."
+                    } else {
+                        spokenReply = "A la orden, señor. ¿En qué le puedo colaborar?"
+                    }
                 }
 
                 withContext(Dispatchers.Main) {
-                    tts?.speak(spokenReply, TextToSpeech.QUEUE_FLUSH, null, "edvis_reply")
+                    speakInFemaleVoice(spokenReply)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in autonomous turn: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    val prompt = if (cleaned.isNotEmpty()) cleaned else spokenText
+                    val launched = EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, prompt)
+                    if (launched) {
+                        speakInFemaleVoice("Abriendo $prompt, señor.")
+                    } else {
+                        speakInFemaleVoice("No pude procesar la orden en este momento, señor.")
+                    }
+                }
             }
         }
     }

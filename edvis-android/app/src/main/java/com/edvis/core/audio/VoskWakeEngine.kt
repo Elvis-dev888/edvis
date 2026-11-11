@@ -113,7 +113,16 @@ class VoskWakeEngine(
                         text.contains("luces") ||
                         text.contains("taller") ||
                         text.contains("escanea") ||
-                        text.contains("mira")
+                        text.contains("mira") ||
+                        text.contains("whatsapp") ||
+                        text.contains("wasap") ||
+                        text.contains("wsp") ||
+                        text.contains("youtube") ||
+                        text.contains("spotify") ||
+                        text.contains("hora") ||
+                        text.contains("fecha") ||
+                        text.contains("quien") ||
+                        text.contains("quién")
 
                     if (isWake) {
                         Log.i(TAG, "Vosk captured speech: '$text' (isFinal=$isFinal, isVoiceWindowActive=$isVoiceWindowActive)")
