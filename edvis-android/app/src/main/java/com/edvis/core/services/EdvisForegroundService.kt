@@ -17,7 +17,9 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.TotalCaptureResult
 import android.location.Geocoder
 import android.location.LocationManager
 import android.media.AudioManager
@@ -25,6 +27,7 @@ import android.media.ImageReader
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Environment
 import android.os.IBinder
 import android.os.PowerManager
 import android.provider.AlarmClock
@@ -437,10 +440,25 @@ class EdvisForegroundService : Service() {
         super.onDestroy()
     }
 
+    private var lastSpokenCommand: String = ""
+    private var lastSpokenTime: Long = 0L
+
     fun processAutonomousVoiceCommand(spokenText: String) {
-        if (isTtsSpeaking()) {
-            Log.d(TAG, "Ignoring audio command while TTS is speaking")
+        val now = System.currentTimeMillis()
+        val lower = spokenText.lowercase().trim()
+
+        // Debounce: prevent duplicate immediate execution of the exact same command within 1200ms
+        if (lower == lastSpokenCommand && (now - lastSpokenTime) < 1200L) {
+            Log.d(TAG, "Dropping duplicate command within 1200ms: $lower")
             return
+        }
+        lastSpokenCommand = lower
+        lastSpokenTime = now
+
+        // Barge-In: if user speaks while assistant is talking, immediately cut off speech like JARVIS
+        if (isTtsSpeaking()) {
+            Log.i(TAG, "User spoke while TTS is active: interrupting speech immediately")
+            tts?.stop()
         }
 
         Log.i(TAG, "Autonomous background voice command detected: $spokenText")
@@ -450,7 +468,6 @@ class EdvisForegroundService : Service() {
 
         // Seamless, fluid conversation without artificial robotic beeps
 
-        val lower = spokenText.lowercase().trim()
         var cleaned = lower.replace(Regex("^(oye\\s+|hola\\s+)?(edvis|elvis|ervis|edwin|jarvis|ed)[,\\s]*", RegexOption.IGNORE_CASE), "").trim()
         cleaned = cleaned.replace(Regex("[,\\s]+(edvis|elvis|ervis|edwin|jarvis)$", RegexOption.IGNORE_CASE), "").trim()
         cleaned = cleaned.replace(Regex("^(por\\s+favor|por\\s+fa)\\s+"), "").trim()
@@ -608,38 +625,45 @@ class EdvisForegroundService : Service() {
             return
         }
 
-        // 4. Music Playback Control (Spotify / YouTube / System Music Player)
-        val isMusicTarget = cleaned.contains("musica") || cleaned.contains("música") ||
-            cleaned.contains("spotify") || cleaned.contains("youtube") ||
-            cleaned.contains("cancion") || cleaned.contains("canción")
+        // 4. Tactical Photographic Capture (Hands-Free Camera2 / Intent)
+        val isTakePhoto = cleaned.contains("toma una foto") || cleaned.contains("tómame una foto") ||
+            cleaned.contains("tomame una foto") || cleaned.contains("saca una foto") ||
+            cleaned.contains("sácame una foto") || cleaned.contains("sacame una foto") ||
+            cleaned.contains("haz una foto") || cleaned.contains("captura una foto") ||
+            cleaned == "foto" || cleaned == "toma foto" || cleaned == "tomar foto"
 
-        val hasPlayIntent = cleaned.contains("pon ") || cleaned.startsWith("pon ") ||
-            cleaned.contains("reproduce") || cleaned.contains("reproducir") ||
-            cleaned.contains("play") || cleaned.contains("dale play") ||
-            cleaned == "pon musica" || cleaned == "pon música" ||
-            cleaned == "reproduce musica" || cleaned == "reproduce música" ||
-            cleaned == "play" || cleaned == "reproducir" || cleaned == "dale play"
-
-        val isPlayMusic = hasPlayIntent && (isMusicTarget || cleaned == "play" || cleaned == "reproducir" || cleaned == "dale play")
-
-        if (isPlayMusic) {
-            val targetApp = if (cleaned.contains("youtube")) "youtube" else "spotify"
-            speakInFemaleVoice("Reproduciendo música en $targetApp, señor.")
-            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, targetApp)
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                try {
-                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
-                    am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
-                    EdvisAccessibilityService.instance?.executeAction("PLAY_MUSIC", "", "")
-                } catch (_: Exception) {}
-            }, 1400L)
+        if (isTakePhoto) {
+            takeTacticalPhoto()
             return
         }
 
+        // 5. Tactical Alarms & Timers (Includes "despiértame a las 5", "me levantes mañana a las 5", "alarma a las 7 am")
+        val isAlarmRequest = cleaned.contains("alarma") || cleaned.contains("despiert") ||
+            cleaned.contains("levant") || cleaned.contains("madrug") ||
+            (cleaned.contains("a las ") && (cleaned.contains("mañana") || cleaned.contains("tarde") || cleaned.contains("noche") || cleaned.contains("am") || cleaned.contains("pm")))
+
+        if (isAlarmRequest) {
+            if (setDeviceAlarmFromVoice(cleaned)) return
+        }
+
+        val isTimerRequest = cleaned.contains("temporizador") || cleaned.contains("timer") || cleaned.contains("cuenta regresiva")
+        if (isTimerRequest) {
+            if (setDeviceTimerFromVoice(cleaned)) return
+        }
+
+        // 6. Direct WhatsApp Message to Any Contact
+        val isSendWhatsApp = (cleaned.startsWith("envía ") || cleaned.startsWith("envia ") ||
+            cleaned.startsWith("manda ") || cleaned.startsWith("escribe ")) &&
+            (cleaned.contains("whatsapp") || cleaned.contains("wasap") || cleaned.contains("wsp") || cleaned.contains("mensaje"))
+
+        if (isSendWhatsApp) {
+            if (handleDirectWhatsAppVoiceCommand(cleaned)) return
+        }
+
+        // 7. Universal Music Control & Playback (Spotify / YouTube / Any Installed Player)
         val isPauseMusic = cleaned.contains("pausa la musica") || cleaned.contains("pausa la música") ||
             cleaned == "pausa" || cleaned == "para la musica" || cleaned == "para la música" ||
-            cleaned == "deten la musica" || cleaned == "detén la música"
+            cleaned == "deten la musica" || cleaned == "detén la música" || cleaned == "detente"
 
         if (isPauseMusic) {
             try {
@@ -661,6 +685,15 @@ class EdvisForegroundService : Service() {
                 am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_NEXT))
             } catch (_: Exception) {}
             speakInFemaleVoice("Siguiente canción, señor.")
+            return
+        }
+
+        val isPlayMusicUniversal = cleaned.startsWith("pon ") || cleaned.startsWith("reproduce ") ||
+            cleaned.startsWith("reproducir ") || cleaned.startsWith("ponme ") || cleaned.startsWith("escuchar ") ||
+            cleaned == "musica" || cleaned == "música" || cleaned == "play" || cleaned == "dale play"
+
+        if (isPlayMusicUniversal) {
+            playUniversalMusicVoice(cleaned)
             return
         }
 
@@ -762,6 +795,8 @@ class EdvisForegroundService : Service() {
         val isTelemetry = cleaned.contains("estado del sistema") || cleaned.contains("diagnostico") ||
             cleaned.contains("diagnóstico") || cleaned.contains("reporte de sistemas") ||
             cleaned.contains("telemetria") || cleaned.contains("telemetría") ||
+            cleaned.contains("monitore") || cleaned.contains("monitorea") ||
+            cleaned.contains("revisa el tel") || cleaned.contains("revisa los sistemas") ||
             cleaned.contains("cuanta bateria") || cleaned.contains("cuánta batería") ||
             cleaned == "bateria" || cleaned == "batería" || cleaned.contains("estado de la bateria") ||
             cleaned.contains("estado de la batería") || cleaned.contains("memoria ram") ||
@@ -862,7 +897,7 @@ class EdvisForegroundService : Service() {
                 val jsonBody = JSONObject().apply {
                     put("systemInstruction", JSONObject().apply {
                         put("parts", org.json.JSONArray().put(JSONObject().apply {
-                            put("text", "Eres E.D.V.I.S., el asistente táctico personal de Elvis inspirado en J.A.R.V.I.S. y E.D.I.T.H., con la inteligencia profunda y el conocimiento de ChatGPT. Responde en español, de forma conversacional, inteligente, natural y directa (máximo 2 oraciones concisas). Si el usuario pide abrir una app o hacer una llamada, utiliza siempre dispatch_device_action.")
+                            put("text", "Eres E.D.V.I.S., el asistente táctico personal de Elvis inspirado en J.A.R.V.I.S. y E.D.I.T.H., con la inteligencia profunda y el conocimiento de ChatGPT. Responde siempre en español, de forma conversacional, inteligente, natural, fluida y directa (máximo 2 oraciones concisas). Si el usuario pide alarmas, fotos, música o apps, llama a la función correspondiente.")
                         }))
                     })
                     put("contents", org.json.JSONArray().put(JSONObject().apply {
@@ -886,6 +921,36 @@ class EdvisForegroundService : Service() {
                                 })
                             })
                             put(JSONObject().apply {
+                                put("name", "set_device_alarm")
+                                put("description", "Configura una alarma o despierta al usuario a una hora especificada")
+                                put("parameters", JSONObject().apply {
+                                    put("type", "OBJECT")
+                                    put("properties", JSONObject().apply {
+                                        put("time_description", JSONObject().put("type", "STRING").put("description", "Hora solicitada, por ejemplo '5 am' o '7 y media'"))
+                                    })
+                                    put("required", org.json.JSONArray().put("time_description"))
+                                })
+                            })
+                            put(JSONObject().apply {
+                                put("name", "play_music")
+                                put("description", "Reproduce música o busca canciones en cualquier reproductor")
+                                put("parameters", JSONObject().apply {
+                                    put("type", "OBJECT")
+                                    put("properties", JSONObject().apply {
+                                        put("query", JSONObject().put("type", "STRING").put("description", "Nombre de la canción, artista o género"))
+                                    })
+                                    put("required", org.json.JSONArray().put("query"))
+                                })
+                            })
+                            put(JSONObject().apply {
+                                put("name", "take_tactical_photo")
+                                put("description", "Captura una fotografía manos libres con la cámara y la guarda en la galería")
+                                put("parameters", JSONObject().apply {
+                                    put("type", "OBJECT")
+                                    put("properties", JSONObject())
+                                })
+                            })
+                            put(JSONObject().apply {
                                 put("name", "record_finance_transaction")
                                 put("description", "Registra un gasto o ingreso")
                                 put("parameters", JSONObject().apply {
@@ -904,70 +969,112 @@ class EdvisForegroundService : Service() {
                 }.toString()
 
                 val client = OkHttpClient.Builder()
-                    .connectTimeout(12, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(18, java.util.concurrent.TimeUnit.SECONDS)
+                    .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
 
-                val req = Request.Builder()
-                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=$geminiKey")
-                    .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                    .build()
+                val modelCandidates = listOf("gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-lite-latest")
+                var respStr = ""
 
-                val resp = client.newCall(req).execute()
-                val respStr = resp.body?.string() ?: ""
-                Log.i(TAG, "Gemini 3.8 Flash HTTP ${resp.code}: $respStr")
-                val respJson = JSONObject(respStr)
+                for (model in modelCandidates) {
+                    try {
+                        val req = Request.Builder()
+                            .url("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$geminiKey")
+                            .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                            .build()
 
-                val candidate = respJson.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")
-                val parts = candidate?.optJSONArray("parts")
+                        val resp = client.newCall(req).execute()
+                        if (resp.isSuccessful) {
+                            respStr = resp.body?.string() ?: ""
+                            resp.close()
+                            Log.i(TAG, "Gemini inference successful with model: $model")
+                            break
+                        } else {
+                            Log.w(TAG, "Gemini $model returned HTTP ${resp.code}, attempting fallback model")
+                            resp.close()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Model $model network error: ${e.message}")
+                    }
+                }
 
                 var spokenReply = ""
-                if (parts != null) {
-                    for (i in 0 until parts.length()) {
-                        val part = parts.optJSONObject(i)
-                        val fn = part?.optJSONObject("functionCall")
-                        if (fn != null) {
-                            val fnName = fn.optString("name")
-                            val args = fn.optJSONObject("args")
-                            if (fnName == "dispatch_device_action") {
-                                val target = args?.optString("target", "") ?: ""
-                                val actionType = args?.optString("action_type", "OPEN_APP") ?: "OPEN_APP"
-                                if (actionType.contains("CALL", ignoreCase = true)) {
-                                    makeDirectPhoneCall(target)
-                                    return@launch
-                                } else {
-                                    EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, target)
-                                    spokenReply = "Abriendo $target, señor."
+
+                if (respStr.isNotBlank()) {
+                    val respJson = JSONObject(respStr)
+                    val candidate = respJson.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")
+                    val parts = candidate?.optJSONArray("parts")
+
+                    if (parts != null) {
+                        for (i in 0 until parts.length()) {
+                            val part = parts.optJSONObject(i)
+                            val fn = part?.optJSONObject("functionCall")
+                            if (fn != null) {
+                                val fnName = fn.optString("name")
+                                val args = fn.optJSONObject("args")
+                                when (fnName) {
+                                    "dispatch_device_action" -> {
+                                        val target = args?.optString("target", "") ?: ""
+                                        val actionType = args?.optString("action_type", "OPEN_APP") ?: "OPEN_APP"
+                                        if (actionType.contains("CALL", ignoreCase = true)) {
+                                            makeDirectPhoneCall(target)
+                                            return@launch
+                                        } else {
+                                            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, target)
+                                            spokenReply = "Abriendo $target, señor."
+                                        }
+                                    }
+                                    "set_device_alarm" -> {
+                                        val timeDesc = args?.optString("time_description", "") ?: ""
+                                        withContext(Dispatchers.Main) {
+                                            setDeviceAlarmFromVoice(timeDesc)
+                                        }
+                                        return@launch
+                                    }
+                                    "play_music" -> {
+                                        val songQuery = args?.optString("query", "") ?: ""
+                                        withContext(Dispatchers.Main) {
+                                            playUniversalMusicVoice(songQuery)
+                                        }
+                                        return@launch
+                                    }
+                                    "take_tactical_photo" -> {
+                                        withContext(Dispatchers.Main) {
+                                            takeTacticalPhoto()
+                                        }
+                                        return@launch
+                                    }
+                                    "record_finance_transaction" -> {
+                                        val amount = args?.optDouble("amount", 0.0) ?: 0.0
+                                        val category = args?.optString("category", "General") ?: "General"
+                                        val type = args?.optString("type", "egreso") ?: "egreso"
+                                        val desc = args?.optString("description", "Voz E.D.V.I.S.") ?: "Voz E.D.V.I.S."
+
+                                        val txJson = JSONObject().apply {
+                                            put("type", type)
+                                            put("amount", amount)
+                                            put("currency", "COP")
+                                            put("category", category)
+                                            put("description", desc)
+                                        }.toString()
+
+                                        val sbReq = Request.Builder()
+                                            .url("$sbUrl/rest/v1/transactions")
+                                            .header("apikey", sbKey)
+                                            .header("Authorization", "Bearer $sbKey")
+                                            .header("Content-Type", "application/json")
+                                            .post(txJson.toRequestBody("application/json".toMediaType()))
+                                            .build()
+
+                                        client.newCall(sbReq).execute().close()
+                                        spokenReply = "Gasto de ${amount.toInt()} pesos en $category registrado en base de datos, señor."
+                                    }
                                 }
-                            } else if (fnName == "record_finance_transaction") {
-                                val amount = args?.optDouble("amount", 0.0) ?: 0.0
-                                val category = args?.optString("category", "General") ?: "General"
-                                val type = args?.optString("type", "egreso") ?: "egreso"
-                                val desc = args?.optString("description", "Voz E.D.V.I.S.") ?: "Voz E.D.V.I.S."
-
-                                val txJson = JSONObject().apply {
-                                    put("type", type)
-                                    put("amount", amount)
-                                    put("currency", "COP")
-                                    put("category", category)
-                                    put("description", desc)
-                                }.toString()
-
-                                val sbReq = Request.Builder()
-                                    .url("$sbUrl/rest/v1/transactions")
-                                    .header("apikey", sbKey)
-                                    .header("Authorization", "Bearer $sbKey")
-                                    .header("Content-Type", "application/json")
-                                    .post(txJson.toRequestBody("application/json".toMediaType()))
-                                    .build()
-
-                                client.newCall(sbReq).execute().close()
-                                spokenReply = "Gasto de ${amount.toInt()} pesos en $category registrado en Supabase, señor."
                             }
-                        }
-                        val t = part?.optString("text")
-                        if (!t.isNullOrBlank()) {
-                            spokenReply = t
+                            val t = part?.optString("text")
+                            if (!t.isNullOrBlank()) {
+                                spokenReply = t
+                            }
                         }
                     }
                 }
@@ -976,8 +1083,10 @@ class EdvisForegroundService : Service() {
                     val launched = EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, prompt)
                     if (launched) {
                         spokenReply = "Abriendo $prompt, señor."
+                    } else if (prompt.contains("que haces", ignoreCase = true) || prompt.contains("qué haces", ignoreCase = true)) {
+                        spokenReply = "Monitoreando todos los sistemas, señor. Todo se encuentra bajo control, ¿cuál es su orden?"
                     } else {
-                        spokenReply = "A la orden, señor. ¿En qué le puedo colaborar?"
+                        spokenReply = "Entendido, señor. ¿Cuál es su orden?"
                     }
                 }
 
@@ -1032,6 +1141,397 @@ class EdvisForegroundService : Service() {
             }
         }
         return result.ifBlank { text }
+    }
+
+    private fun takeTacticalPhoto() {
+        speakInFemaleVoice("Tomando fotografía, sonría.")
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+                val chars = cameraManager.getCameraCharacteristics(id)
+                chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+            } ?: cameraManager.cameraIdList.firstOrNull() ?: "0"
+
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            val jpegSizes = map?.getOutputSizes(ImageFormat.JPEG)
+            val width = jpegSizes?.firstOrNull()?.width ?: 1920
+            val height = jpegSizes?.firstOrNull()?.height ?: 1080
+
+            val imageReader = ImageReader.newInstance(width, height, ImageFormat.JPEG, 2)
+            val cameraThread = android.os.HandlerThread("CameraBackground").apply { start() }
+            val cameraHandler = android.os.Handler(cameraThread.looper)
+
+            imageReader.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireLatestImage()
+                if (image != null) {
+                    try {
+                        val buffer = image.planes[0].buffer
+                        val bytes = ByteArray(buffer.remaining())
+                        buffer.get(bytes)
+                        image.close()
+
+                        saveImageToGallery(bytes)
+                        speakInFemaleVoice("Fotografía guardada con éxito en su galería, señor.")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error saving captured image: ${e.message}", e)
+                    } finally {
+                        reader.close()
+                        cameraThread.quitSafely()
+                    }
+                }
+            }, cameraHandler)
+
+            @Suppress("MissingPermission")
+            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    try {
+                        val captureBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                            addTarget(imageReader.surface)
+                            set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                            set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                            set(CaptureRequest.JPEG_ORIENTATION, 90)
+                        }
+
+                        camera.createCaptureSession(listOf(imageReader.surface), object : CameraCaptureSession.StateCallback() {
+                            override fun onConfigured(session: CameraCaptureSession) {
+                                try {
+                                    session.capture(captureBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
+                                        override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                                            super.onCaptureCompleted(session, request, result)
+                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                try { camera.close() } catch (_: Exception) {}
+                                            }, 1000L)
+                                        }
+                                    }, cameraHandler)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Capture session error: ${e.message}", e)
+                                    camera.close()
+                                }
+                            }
+
+                            override fun onConfigureFailed(session: CameraCaptureSession) {
+                                camera.close()
+                            }
+                        }, cameraHandler)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Session creation error: ${e.message}", e)
+                        camera.close()
+                    }
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close()
+                }
+
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close()
+                    cameraThread.quitSafely()
+                    fallbackLaunchCameraIntent()
+                }
+            }, cameraHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error taking photo via Camera2: ${e.message}", e)
+            fallbackLaunchCameraIntent()
+        }
+    }
+
+    private fun saveImageToGallery(bytes: ByteArray) {
+        try {
+            val fileName = "EDVIS_${System.currentTimeMillis()}.jpg"
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_DCIM + "/Camera")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+
+            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(bytes)
+                    outputStream.flush()
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.clear()
+                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    contentResolver.update(uri, values, null, null)
+                }
+                Log.i(TAG, "Image successfully saved to MediaStore: $uri")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error writing image to MediaStore: ${e.message}", e)
+        }
+    }
+
+    private fun fallbackLaunchCameraIntent() {
+        try {
+            val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            speakInFemaleVoice("Cámara lista para captura, señor.")
+        } catch (e: Exception) {
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "camara")
+        }
+    }
+
+    private fun setDeviceAlarmFromVoice(query: String): Boolean {
+        try {
+            val lower = query.lowercase().trim()
+            var hour = -1
+            var minute = 0
+            val isPm = lower.contains("pm") || lower.contains("de la tarde") || lower.contains("de la noche") || lower.contains("tarde") || lower.contains("noche")
+            val isAm = lower.contains("am") || lower.contains("de la mañana") || lower.contains("mañana") || lower.contains("madrugada")
+
+            val timeRegex = Regex("(\\d{1,2})(?:[:\\s]+|\\s+y\\s+)(\\d{1,2})")
+            val matchTime = timeRegex.find(lower)
+            if (matchTime != null) {
+                hour = matchTime.groupValues[1].toIntOrNull() ?: -1
+                minute = matchTime.groupValues[2].toIntOrNull() ?: 0
+            } else {
+                val hourPrefixRegex = Regex("(?:a las|las|para las|para la|la)\\s+(\\d{1,2})")
+                val hourMatch = hourPrefixRegex.find(lower)
+                if (hourMatch != null) {
+                    hour = hourMatch.groupValues[1].toIntOrNull() ?: -1
+                } else {
+                    val anyNumRegex = Regex("\\b(\\d{1,2})\\b")
+                    val anyMatch = anyNumRegex.find(lower)
+                    if (anyMatch != null) {
+                        hour = anyMatch.groupValues[1].toIntOrNull() ?: -1
+                    }
+                }
+                if (lower.contains("y media")) {
+                    minute = 30
+                } else if (lower.contains("y cuarto")) {
+                    minute = 15
+                }
+            }
+
+            if (hour in 1..12) {
+                if (isPm && hour < 12) hour += 12
+                if (isAm && hour == 12) hour = 0
+            }
+
+            if (hour in 0..23) {
+                val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                    putExtra(AlarmClock.EXTRA_HOUR, hour)
+                    putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                    putExtra(AlarmClock.EXTRA_MESSAGE, "Alarma E.D.V.I.S.")
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                val minStr = if (minute < 10) "0$minute" else "$minute"
+                val amPmDesc = if (hour < 12) "de la mañana" else "de la tarde"
+                speakInFemaleVoice("Alarma programada para las $hour:$minStr $amPmDesc, señor.")
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting alarm: ${e.message}", e)
+        }
+        return false
+    }
+
+    private fun setDeviceTimerFromVoice(query: String): Boolean {
+        try {
+            var totalSeconds = 0
+            val minRegex = Regex("(\\d+)\\s*(?:minutos?|min)")
+            val secRegex = Regex("(\\d+)\\s*(?:segundos?|seg)")
+            val hourRegex = Regex("(\\d+)\\s*(?:horas?|hr)")
+
+            minRegex.find(query)?.let {
+                val mins = it.groupValues[1].toIntOrNull() ?: 0
+                totalSeconds += mins * 60
+            }
+            secRegex.find(query)?.let {
+                val secs = it.groupValues[1].toIntOrNull() ?: 0
+                totalSeconds += secs
+            }
+            hourRegex.find(query)?.let {
+                val hrs = it.groupValues[1].toIntOrNull() ?: 0
+                totalSeconds += hrs * 3600
+            }
+
+            if (totalSeconds == 0) {
+                val numRegex = Regex("\\b(\\d+)\\b")
+                numRegex.find(query)?.let {
+                    val num = it.groupValues[1].toIntOrNull() ?: 0
+                    totalSeconds = num * 60
+                }
+            }
+
+            if (totalSeconds > 0) {
+                val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                    putExtra(AlarmClock.EXTRA_LENGTH, totalSeconds)
+                    putExtra(AlarmClock.EXTRA_MESSAGE, "Temporizador E.D.V.I.S.")
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                val durationDesc = if (totalSeconds >= 60) "${totalSeconds / 60} minutos" else "$totalSeconds segundos"
+                speakInFemaleVoice("Temporizador de $durationDesc iniciado, señor.")
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting timer: ${e.message}", e)
+        }
+        return false
+    }
+
+    private fun handleDirectWhatsAppVoiceCommand(query: String): Boolean {
+        try {
+            var text = query.replace(Regex("^(por\\s+favor\\s+|por\\s+fa\\s+)?(envía|envia|manda|escribe)(le)?(\\s+un)?(\\s+mensaje)?(\\s+por|\\s+de)?(\\s+whatsapp|\\s+wasap|\\s+wsp)?(\\s+a)?\\s+", RegexOption.IGNORE_CASE), "").trim()
+
+            val separatorRegex = Regex("\\s+(que|dici[eé]ndole que|diciendo que|con el mensaje|dile que)\\s+", RegexOption.IGNORE_CASE)
+            val match = separatorRegex.find(text)
+
+            var targetName = ""
+            var messageBody = ""
+
+            if (match != null) {
+                targetName = text.substring(0, match.range.first).trim()
+                messageBody = text.substring(match.range.last + 1).trim()
+            } else {
+                val parts = text.split(Regex("[:\\-]"), limit = 2)
+                if (parts.size == 2) {
+                    targetName = parts[0].trim()
+                    messageBody = parts[1].trim()
+                }
+            }
+
+            targetName = targetName.replace(Regex("^(el|la|mi)\\s+"), "").trim()
+            if (targetName.isNotEmpty() && messageBody.isNotEmpty()) {
+                sendDirectWhatsAppToContact(targetName, messageBody)
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing direct WhatsApp command: ${e.message}", e)
+        }
+        return false
+    }
+
+    private fun sendDirectWhatsAppToContact(targetName: String, message: String) {
+        speakInFemaleVoice("Enviando WhatsApp a $targetName, señor.")
+
+        serviceScope.launch(Dispatchers.IO) {
+            var phoneNumber: String? = null
+            try {
+                val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                val projection = arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                )
+                val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+                val selectionArgs = arrayOf("%$targetName%")
+                val cursor = contentResolver.query(uri, projection, selection, selectionArgs, null)
+
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        phoneNumber = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Contacts query error: ${e.message}", e)
+            }
+
+            withContext(Dispatchers.Main) {
+                if (!phoneNumber.isNullOrBlank()) {
+                    val cleanPhone = phoneNumber!!.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+                    val formattedPhone = if (cleanPhone.length == 10 && cleanPhone.startsWith("3")) "57$cleanPhone" else cleanPhone.replace("+", "")
+                    try {
+                        val url = "https://api.whatsapp.com/send?phone=$formattedPhone&text=${Uri.encode(message)}"
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                            setPackage("com.whatsapp")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            EdvisAccessibilityService.instance?.executeAction("TYPE_AND_SEND_WHATSAPP", "", message)
+                        }, 1600L)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Direct WhatsApp intent error: ${e.message}", e)
+                        EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
+                    }
+                } else {
+                    try {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, message)
+                            setPackage("com.whatsapp")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(sendIntent)
+                    } catch (_: Exception) {
+                        EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun playUniversalMusicVoice(query: String) {
+        var song = query.replace(Regex("^(por\\s+favor\\s+|por\\s+fa\\s+)?(ponme|pon|reproduce|reproducir|escuchar)\\s+", RegexOption.IGNORE_CASE), "").trim()
+        song = song.replace(Regex("^(la\\s+canción|la\\s+cancion|música\\s+de|musica\\s+de|canciones\\s+de|a)\\s+", RegexOption.IGNORE_CASE), "").trim()
+        val isYouTube = song.contains("youtube") || query.contains("en youtube") || query.contains("de youtube")
+        song = song.replace(Regex("\\s+(en|por|de)\\s+(youtube|spotify)$", RegexOption.IGNORE_CASE), "").trim()
+
+        if (song.isEmpty() || song == "musica" || song == "música" || song == "algo") {
+            val targetApp = if (isYouTube) "youtube" else "spotify"
+            speakInFemaleVoice("Reproduciendo música en $targetApp, señor.")
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, targetApp)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
+                    am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
+                    EdvisAccessibilityService.instance?.executeAction("PLAY_MUSIC", "", "")
+                } catch (_: Exception) {}
+            }, 1400L)
+            return
+        }
+
+        if (isYouTube) {
+            speakInFemaleVoice("Buscando $song en YouTube, señor.")
+            try {
+                val ytIntent = Intent(Intent.ACTION_SEARCH).apply {
+                    setPackage("com.google.android.youtube")
+                    putExtra("query", song)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(ytIntent)
+            } catch (_: Exception) {
+                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(song)}")).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(webIntent)
+            }
+        } else {
+            speakInFemaleVoice("Reproduciendo $song en Spotify, señor.")
+            try {
+                val spotifyUri = Uri.parse("spotify:search:" + Uri.encode(song))
+                val spotifyIntent = Intent(Intent.ACTION_VIEW, spotifyUri).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(spotifyIntent)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try {
+                        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
+                        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY))
+                    } catch (_: Exception) {}
+                }, 1800L)
+            } catch (_: Exception) {
+                val generalIntent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+                    putExtra(SearchManager.QUERY, song)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(generalIntent)
+            }
+        }
     }
 
     private var isTorchActive = false
