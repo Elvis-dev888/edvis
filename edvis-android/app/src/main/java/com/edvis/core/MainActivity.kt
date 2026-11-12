@@ -405,6 +405,7 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.CALL_PHONE,
             Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
             Manifest.permission.READ_CONTACTS
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -423,10 +424,25 @@ class MainActivity : AppCompatActivity() {
         if (missing.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, missing.toTypedArray(), 2001)
         } else {
+            ensureNotificationListenerAccess()
             val svcIntent = Intent(this, EdvisForegroundService::class.java)
             ContextCompat.startForegroundService(this, svcIntent)
             startContinuousVoiceRecognition()
         }
+    }
+
+    private fun ensureNotificationListenerAccess() {
+        try {
+            val cn = android.content.ComponentName(this, com.edvis.core.services.EdvisNotificationService::class.java)
+            val flat = android.provider.Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+            val isEnabled = flat != null && flat.contains(cn.flattenToString())
+            if (!isEnabled) {
+                val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onRequestPermissionsResult(

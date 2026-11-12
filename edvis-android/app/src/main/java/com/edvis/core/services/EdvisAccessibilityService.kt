@@ -160,7 +160,21 @@ class EdvisAccessibilityService : AccessibilityService() {
         rootInActiveWindow?.let { root ->
             if (playLastVoiceMessageInWhatsApp(root)) {
                 pendingPlayVoiceNote = false
+                return
             }
+        }
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        for (delay in listOf(400L, 800L, 1200L, 1800L, 2500L, 3500L)) {
+            handler.postDelayed({
+                if (pendingPlayVoiceNote) {
+                    rootInActiveWindow?.let { root ->
+                        if (playLastVoiceMessageInWhatsApp(root)) {
+                            pendingPlayVoiceNote = false
+                            Log.i(TAG, "WhatsApp voice message play button clicked on retry $delay ms")
+                        }
+                    }
+                }
+            }, delay)
         }
     }
 
@@ -169,17 +183,26 @@ class EdvisAccessibilityService : AccessibilityService() {
             "com.whatsapp:id/conversation_row_sound_recording_play_button",
             "com.whatsapp:id/play",
             "com.whatsapp:id/play_pause_button",
-            "com.whatsapp:id/voice_note_play"
+            "com.whatsapp:id/voice_note_play",
+            "com.whatsapp:id/btn_play"
         )
         for (id in voiceIds) {
             val nodes = root.findAccessibilityNodeInfosByViewId(id)
             val lastBtn = nodes.lastOrNull()
-            if (lastBtn != null && lastBtn.isClickable) {
-                lastBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                return true
+            if (lastBtn != null) {
+                if (lastBtn.isClickable) {
+                    lastBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    return true
+                }
+                lastBtn.parent?.let { parent ->
+                    if (parent.isClickable) {
+                        parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        return true
+                    }
+                }
             }
         }
-        return clickLastNodeByTextOrDesc(root, listOf("reproducir", "play", "escuchar"))
+        return clickLastNodeByTextOrDesc(root, listOf("reproducir", "play", "escuchar", "mensaje de voz", "nota de voz"))
     }
 
     private fun clickLastNodeByTextOrDesc(node: AccessibilityNodeInfo, keywords: List<String>): Boolean {
@@ -193,6 +216,9 @@ class EdvisAccessibilityService : AccessibilityService() {
         if (keywords.any { text.contains(it) || desc.contains(it) }) {
             if (node.isClickable) {
                 node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return true
+            } else if (node.parent?.isClickable == true) {
+                node.parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 return true
             }
         }

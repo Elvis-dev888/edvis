@@ -165,6 +165,15 @@ class EdvisForegroundService : Service() {
         }
     }
 
+    fun handleIncomingVoipCall(app: String, caller: String) {
+        wakeUpScreen()
+        ensureAdequateVolume()
+        isCallRinging = true
+        ringingNumber = caller
+        activateVoiceListeningWindow(40_000L)
+        speakInFemaleVoice("Llamada entrante de $caller en $app, señor. ¿Deseas que conteste o cuelgue?")
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -253,20 +262,31 @@ class EdvisForegroundService : Service() {
                 }
             }
             val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
-            registerReceiver(callReceiver, filter)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(callReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(callReceiver, filter)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error registering call receiver: ${e.message}")
         }
     }
 
     fun answerIncomingCall() {
+        val voipAnswered = EdvisNotificationService.instance?.answerVoipCall() ?: false
+        if (voipAnswered) {
+            isCallRinging = false
+            speakInFemaleVoice("Llamada contestada, señor.")
+            return
+        }
+
         try {
             val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 @Suppress("DEPRECATION")
                 telecomManager.acceptRingingCall()
                 isCallRinging = false
-                speakInFemaleVoice("Llamada conectada.")
+                speakInFemaleVoice("Llamada contestada, señor.")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error answering call: ${e.message}")
@@ -274,12 +294,20 @@ class EdvisForegroundService : Service() {
     }
 
     fun rejectIncomingCall() {
+        val voipRejected = EdvisNotificationService.instance?.rejectVoipCall() ?: false
+        if (voipRejected) {
+            isCallRinging = false
+            speakInFemaleVoice("Llamada rechazada, señor.")
+            return
+        }
+
         try {
             val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                @Suppress("DEPRECATION")
                 telecomManager.endCall()
                 isCallRinging = false
-                speakInFemaleVoice("Llamada rechazada.")
+                speakInFemaleVoice("Llamada rechazada, señor.")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error rejecting call: ${e.message}")
@@ -666,6 +694,42 @@ class EdvisForegroundService : Service() {
 
         if (isSendWhatsApp) {
             if (handleDirectWhatsAppVoiceCommand(cleaned)) return
+        }
+
+        // 6.1 WhatsApp & Messaging Direct Audio Playback and Message Reading Shortcut
+        val isVoiceNoteCommand = cleaned.contains("reproduce la nota") || cleaned.contains("reproduce el audio") ||
+            cleaned.contains("reproducir el audio") || cleaned.contains("reproducir la nota") ||
+            cleaned.contains("escucha el audio") || cleaned.contains("escuchar el audio") ||
+            cleaned.contains("escucha la nota") || cleaned.contains("escuchar la nota") ||
+            cleaned == "reproduce la nota de voz" || cleaned.contains("nota de voz")
+
+        if (isVoiceNoteCommand) {
+            val app = currentReplyApp ?: EdvisNotificationService.lastSenderApp ?: "WhatsApp"
+            val sender = currentReplyTarget ?: EdvisNotificationService.lastSenderName ?: "el contacto"
+            speakInFemaleVoice("Reproduciendo nota de voz de $sender en $app, señor.")
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, app)
+            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+            return
+        }
+
+        val isReadLastMessage = cleaned.contains("leeme el mensaje") || cleaned.contains("léeme el mensaje") ||
+            cleaned.contains("leeme el ultimo mensaje") || cleaned.contains("léeme el último mensaje") ||
+            cleaned.contains("que me escribieron") || cleaned.contains("qué me escribieron") ||
+            cleaned.contains("lee el mensaje") || cleaned.contains("leer mensaje")
+
+        if (isReadLastMessage) {
+            val sender = currentReplyTarget ?: EdvisNotificationService.lastSenderName ?: "el contacto"
+            val app = currentReplyApp ?: EdvisNotificationService.lastSenderApp ?: "WhatsApp"
+            val msg = currentPendingMessageText ?: EdvisNotificationService.lastMessageText ?: ""
+            if (msg.isNotBlank()) {
+                conversationState = ConversationState.AWAITING_REPLY_CONFIRMATION
+                conversationExpiresAt = System.currentTimeMillis() + 45_000L
+                activateVoiceListeningWindow(45_000L)
+                speakInFemaleVoice("$sender en $app dice: '$msg'. ¿Deseas responder?")
+            } else {
+                speakInFemaleVoice("No tengo registros de mensajes recientes sin leer, señor.")
+            }
+            return
         }
 
         // 7. Universal Music Control & Playback (Spotify / YouTube / Any Installed Player)
