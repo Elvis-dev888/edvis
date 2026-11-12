@@ -30,6 +30,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FLASHLIGHT" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
@@ -84,6 +86,11 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- Tactical Voice Alarm Receiver (JARVIS Morning Briefing Wakeup) -->
+        <receiver
+            android:name=".services.EdvisVoiceAlarmReceiver"
+            android:exported="false" />
 
     </application>
 

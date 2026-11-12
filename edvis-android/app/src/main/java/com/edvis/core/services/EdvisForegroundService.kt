@@ -1,9 +1,11 @@
 package com.edvis.core.services
 
 import android.app.ActivityManager
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.SearchManager
 import android.app.Service
 import android.content.BroadcastReceiver
@@ -342,6 +344,12 @@ class EdvisForegroundService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         isRunning = true
+
+        if (intent?.action == "ACTION_MORNING_WAKEUP") {
+            val h = intent.getIntExtra(EdvisVoiceAlarmReceiver.EXTRA_ALARM_HOUR, 5)
+            val m = intent.getIntExtra(EdvisVoiceAlarmReceiver.EXTRA_ALARM_MINUTE, 0)
+            triggerJarvisMorningWakeup(h, m)
+        }
 
         // 1. Route audio exclusively through Motorcycle Helmet Bluetooth SCO (or speakerphone)
         bluetoothScoManager = BluetoothScoManager(this) { connected ->
@@ -809,8 +817,10 @@ class EdvisForegroundService : Service() {
 
         // 8. Control de Volumen de Hardware
         val isVolumeUp = cleaned.contains("sube el volumen") || cleaned.contains("subir volumen") ||
+            cleaned.contains("súbele") || cleaned.contains("subele") || cleaned.contains("sube volumen") ||
             cleaned.contains("aumenta el volumen") || cleaned.contains("más volumen") || cleaned.contains("mas volumen")
         val isVolumeDown = cleaned.contains("baja el volumen") || cleaned.contains("bajar volumen") ||
+            cleaned.contains("bájale") || cleaned.contains("bajale") || cleaned.contains("baja volumen") ||
             cleaned.contains("disminuye el volumen") || cleaned.contains("menos volumen")
         val isVolumeMax = cleaned.contains("volumen al maximo") || cleaned.contains("volumen al máximo") ||
             cleaned.contains("volumen 100") || cleaned.contains("todo el volumen")
@@ -1316,6 +1326,10 @@ class EdvisForegroundService : Service() {
             }
 
             if (hour in 0..23) {
+                // 1. Programar despertar táctico por voz propia (Protocolo JARVIS)
+                scheduleVoiceAlarm(hour, minute)
+
+                // 2. Programar alarma estándar de respaldo en el reloj
                 val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
                     putExtra(AlarmClock.EXTRA_HOUR, hour)
                     putExtra(AlarmClock.EXTRA_MINUTES, minute)
@@ -1797,5 +1811,57 @@ class EdvisForegroundService : Service() {
     private fun updateNotification(statusText: String) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, buildNotification(statusText))
+    }
+
+    private fun scheduleVoiceAlarm(hour: Int, minute: Int) {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val calendar = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, hour)
+                set(java.util.Calendar.MINUTE, minute)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+                if (before(java.util.Calendar.getInstance())) {
+                    add(java.util.Calendar.DAY_OF_YEAR, 1)
+                }
+            }
+
+            val intent = Intent(this, EdvisVoiceAlarmReceiver::class.java).apply {
+                putExtra(EdvisVoiceAlarmReceiver.EXTRA_ALARM_HOUR, hour)
+                putExtra(EdvisVoiceAlarmReceiver.EXTRA_ALARM_MINUTE, minute)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                this,
+                1002,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    calendar.timeInMillis,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    calendar.timeInMillis,
+                    pendingIntent
+                )
+            }
+            Log.i(TAG, "Scheduled exact voice wakeup for: ${calendar.time}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error scheduling voice alarm: ${e.message}", e)
+        }
+    }
+
+    fun triggerJarvisMorningWakeup(hour: Int, minute: Int) {
+        wakeUpScreen()
+        ensureAdequateVolume()
+        val minStr = if (minute < 10) "0$minute" else "$minute"
+        val greeting = "Buenos días, Elvis. Son las $hour:$minStr de la mañana. Es hora de levantarse. Todos los sistemas se encuentran nominales y listos a su servicio."
+        speakInFemaleVoice(greeting)
+        activateVoiceListeningWindow(60_000L)
     }
 }
