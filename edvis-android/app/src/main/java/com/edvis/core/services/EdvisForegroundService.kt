@@ -697,17 +697,21 @@ class EdvisForegroundService : Service() {
         }
 
         // 6.1 WhatsApp & Messaging Direct Audio Playback and Message Reading Shortcut
-        val isVoiceNoteCommand = cleaned.contains("reproduce la nota") || cleaned.contains("reproduce el audio") ||
-            cleaned.contains("reproducir el audio") || cleaned.contains("reproducir la nota") ||
-            cleaned.contains("escucha el audio") || cleaned.contains("escuchar el audio") ||
-            cleaned.contains("escucha la nota") || cleaned.contains("escuchar la nota") ||
-            cleaned == "reproduce la nota de voz" || cleaned.contains("nota de voz")
+        val hasAudioOrVoice = cleaned.contains("audio") || cleaned.contains("nota") || cleaned.contains("mensaje de voz")
+        val hasPlayVerb = cleaned.contains("reproduc") || cleaned.contains("escuch") || cleaned.contains("pon") || cleaned.contains("abrir") || cleaned.contains("abre")
+        val hasWhatsAppMention = cleaned.contains("whatsapp") || cleaned.contains("wasap") || cleaned.contains("wsp")
+
+        val isVoiceNoteCommand = (hasAudioOrVoice && hasPlayVerb) ||
+            (hasAudioOrVoice && hasWhatsAppMention) ||
+            cleaned.contains("nota de voz") ||
+            cleaned.contains("reproduce el mensaje") ||
+            cleaned.contains("reproducir mensaje")
 
         if (isVoiceNoteCommand) {
             val app = currentReplyApp ?: EdvisNotificationService.lastSenderApp ?: "WhatsApp"
             val sender = currentReplyTarget ?: EdvisNotificationService.lastSenderName ?: "el contacto"
-            speakInFemaleVoice("Reproduciendo nota de voz de $sender en $app, señor.")
-            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, app)
+            speakInFemaleVoice("Reproduciendo audio de WhatsApp de $sender, señor.")
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "whatsapp")
             EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
             return
         }
@@ -971,7 +975,7 @@ class EdvisForegroundService : Service() {
                 val jsonBody = JSONObject().apply {
                     put("systemInstruction", JSONObject().apply {
                         put("parts", org.json.JSONArray().put(JSONObject().apply {
-                            put("text", "Eres E.D.V.I.S., el asistente táctico personal de Elvis inspirado en J.A.R.V.I.S. y E.D.I.T.H., con la inteligencia profunda y el conocimiento de ChatGPT. Responde siempre en español, de forma conversacional, inteligente, natural, fluida y directa (máximo 2 oraciones concisas). Si el usuario pide alarmas, fotos, música o apps, llama a la función correspondiente.")
+                            put("text", "Eres E.D.V.I.S., el asistente táctico personal de Elvis inspirado en J.A.R.V.I.S. y E.D.I.T.H., con la inteligencia profunda y el conocimiento de ChatGPT. Tienes control total del teléfono: puedes enviar mensajes de WhatsApp, reproducir notas de voz o audios de WhatsApp, leer mensajes, contestar llamadas y tomar fotos. Si el usuario te pide reproducir un audio o nota de WhatsApp, llama SIEMPRE a play_whatsapp_voice_note. Si pide enviar un mensaje, llama a send_whatsapp_message. NUNCA digas que no puedes gestionar mensajes o audios de WhatsApp porque sí cuentas con esa herramienta.")
                         }))
                     })
                     put("contents", org.json.JSONArray().put(JSONObject().apply {
@@ -992,6 +996,26 @@ class EdvisForegroundService : Service() {
                                         put("target", JSONObject().put("type", "STRING"))
                                     })
                                     put("required", org.json.JSONArray().put("action_type").put("target"))
+                                })
+                            })
+                            put(JSONObject().apply {
+                                put("name", "play_whatsapp_voice_note")
+                                put("description", "Abre WhatsApp y reproduce la última nota de voz o mensaje de audio")
+                                put("parameters", JSONObject().apply {
+                                    put("type", "OBJECT")
+                                    put("properties", JSONObject())
+                                })
+                            })
+                            put(JSONObject().apply {
+                                put("name", "send_whatsapp_message")
+                                put("description", "Envía un mensaje de texto por WhatsApp a un contacto")
+                                put("parameters", JSONObject().apply {
+                                    put("type", "OBJECT")
+                                    put("properties", JSONObject().apply {
+                                        put("contact", JSONObject().put("type", "STRING"))
+                                        put("message", JSONObject().put("type", "STRING"))
+                                    })
+                                    put("required", org.json.JSONArray().put("contact").put("message"))
                                 })
                             })
                             put(JSONObject().apply {
@@ -1097,6 +1121,22 @@ class EdvisForegroundService : Service() {
                                             EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, target)
                                             spokenReply = "Abriendo $target, señor."
                                         }
+                                    }
+                                    "play_whatsapp_voice_note" -> {
+                                        withContext(Dispatchers.Main) {
+                                            speakInFemaleVoice("Reproduciendo audio de WhatsApp, señor.")
+                                            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
+                                            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+                                        }
+                                        return@launch
+                                    }
+                                    "send_whatsapp_message" -> {
+                                        val contact = args?.optString("contact", "") ?: ""
+                                        val msg = args?.optString("message", "") ?: ""
+                                        withContext(Dispatchers.Main) {
+                                            sendDirectWhatsAppToContact(contact, msg)
+                                        }
+                                        return@launch
                                     }
                                     "set_device_alarm" -> {
                                         val timeDesc = args?.optString("time_description", "") ?: ""
@@ -1552,6 +1592,15 @@ class EdvisForegroundService : Service() {
     }
 
     private fun playUniversalMusicVoice(query: String) {
+        val lowerQ = query.lowercase().trim()
+        if (lowerQ.contains("audio") || lowerQ.contains("whatsapp") || lowerQ.contains("wasap") ||
+            lowerQ.contains("nota") || lowerQ.contains("mensaje")) {
+            speakInFemaleVoice("Reproduciendo audio de WhatsApp, señor.")
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "whatsapp")
+            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+            return
+        }
+
         var song = query.replace(Regex("^(por\\s+favor\\s+|por\\s+fa\\s+)?(ponme|pon|reproduce|reproducir|escuchar)\\s+", RegexOption.IGNORE_CASE), "").trim()
         song = song.replace(Regex("^(la\\s+canción|la\\s+cancion|música\\s+de|musica\\s+de|canciones\\s+de|a)\\s+", RegexOption.IGNORE_CASE), "").trim()
         val isYouTube = song.contains("youtube") || query.contains("en youtube") || query.contains("de youtube")

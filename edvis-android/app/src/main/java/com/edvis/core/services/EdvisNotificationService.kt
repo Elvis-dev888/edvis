@@ -87,7 +87,6 @@ class EdvisNotificationService : NotificationListenerService() {
         val isWatched = pkg in WATCHED_PACKAGES || pkg.contains("whatsapp") || pkg.contains("dialer") ||
             pkg.contains("telecom") || pkg.contains("phone") || pkg.contains("messenger") || pkg.contains("instagram")
         if (!isWatched) return
-        if ((notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
 
         val extras = notification.extras ?: return
         var sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
@@ -103,6 +102,12 @@ class EdvisNotificationService : NotificationListenerService() {
 
         val lowerText = text.lowercase().trim()
         val lowerSender = sender.lowercase().trim()
+
+        // Ignore pure group summary count headers ("3 mensajes de 2 chats")
+        val isPureGroupCount = lowerText.contains(Regex("\\d+\\s+mensajes?\\s+de\\s+\\d+\\s+chats?")) ||
+            lowerText.contains(Regex("\\d+\\s+nuevos?\\s+mensajes?")) ||
+            lowerSender.contains(Regex("\\d+\\s+mensajes?"))
+        if (isPureGroupCount) return
 
         val category = notification.category ?: ""
         val isCall = category == Notification.CATEGORY_CALL ||

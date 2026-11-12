@@ -52,6 +52,22 @@ class MainActivity : AppCompatActivity() {
     private var recognizerIntent: Intent? = null
     private val handler = Handler(Looper.getMainLooper())
     private var isListening = false
+    private var notifBtn: Button? = null
+    private var accBtn: Button? = null
+
+    private fun updatePermissionBadges() {
+        try {
+            val cn = android.content.ComponentName(this, com.edvis.core.services.EdvisNotificationService::class.java)
+            val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+            val notifOk = flat != null && flat.contains(cn.flattenToString())
+            notifBtn?.text = if (notifOk) "🔔 NOTIF 🟢" else "🔔 NOTIF 🔴 ACTIVAR"
+            notifBtn?.setTextColor(if (notifOk) Color.parseColor("#00E676") else Color.parseColor("#FF5252"))
+
+            val accOk = com.edvis.core.services.EdvisAccessibilityService.instance != null
+            accBtn?.text = if (accOk) "⚙️ ACCESIBILIDAD 🟢" else "⚙️ ACCESIBILIDAD 🔴 ACTIVAR"
+            accBtn?.setTextColor(if (accOk) Color.parseColor("#00E676") else Color.parseColor("#FF5252"))
+        } catch (_: Exception) {}
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,7 +152,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val notifBtn = Button(this).apply {
+        notifBtn = Button(this).apply {
             text = "🔔 NOTIFICACIONES"
             textSize = 10f
             setOnClickListener {
@@ -144,7 +160,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val accBtn = Button(this).apply {
+        accBtn = Button(this).apply {
             text = "⚙️ ACCESIBILIDAD"
             textSize = 10f
             setOnClickListener {
@@ -194,6 +210,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(scrollBar)
         root.addView(webView)
         setContentView(root)
+        updatePermissionBadges()
     }
 
     inner class EdvisAndroidBridge {
@@ -345,6 +362,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        updatePermissionBadges()
         if (!EdvisForegroundService.isRunning && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             val svcIntent = Intent(this, EdvisForegroundService::class.java)
             ContextCompat.startForegroundService(this, svcIntent)
