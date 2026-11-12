@@ -122,7 +122,13 @@ class VoskWakeEngine(
                         text.contains("hora") ||
                         text.contains("fecha") ||
                         text.contains("quien") ||
-                        text.contains("quién")
+                        text.contains("quién") ||
+                        text.contains("foto") ||
+                        text.contains("alarma") ||
+                        text.contains("temporizador") ||
+                        text.contains("envia") ||
+                        text.contains("envía") ||
+                        text.contains("manda")
 
                     if (isWake) {
                         Log.i(TAG, "Vosk captured speech: '$text' (isFinal=$isFinal, isVoiceWindowActive=$isVoiceWindowActive)")
@@ -144,7 +150,8 @@ class VoskWakeEngine(
                                 text.contains("linterna") || text.contains("pon musica") || text.contains("pon música") ||
                                 text.contains("sube el volumen") || text.contains("baja el volumen") ||
                                 text.contains("que hora es") || text.contains("dime la hora") ||
-                                text.contains("donde estoy")
+                                text.contains("donde estoy") || text.contains("foto") ||
+                                text.contains("alarma") || text.contains("temporizador")
                             )
                             if (isImmediateCommand) {
                                 rec.reset()
