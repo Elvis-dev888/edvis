@@ -276,6 +276,57 @@ class EdvisAccessibilityService : AccessibilityService() {
         return false
     }
 
+    fun clickAt(x: Float, y: Float): Boolean {
+        return try {
+            val path = android.graphics.Path().apply {
+                moveTo(x, y)
+            }
+            val stroke = android.accessibilityservice.GestureDescription.StrokeDescription(path, 0L, 100L)
+            val gesture = android.accessibilityservice.GestureDescription.Builder().addStroke(stroke).build()
+            val dispatched = dispatchGesture(gesture, object : android.accessibilityservice.AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                    super.onCompleted(gestureDescription)
+                    Log.i(TAG, "Hardware gesture tap completed at ($x, $y)")
+                }
+                override fun onCancelled(gestureDescription: android.accessibilityservice.GestureDescription?) {
+                    super.onCancelled(gestureDescription)
+                    Log.w(TAG, "Hardware gesture tap cancelled at ($x, $y)")
+                }
+            }, null)
+            Log.i(TAG, "dispatchGesture at ($x, $y) returned $dispatched")
+            dispatched
+        } catch (e: Exception) {
+            Log.e(TAG, "dispatchGesture failed: ${e.message}")
+            false
+        }
+    }
+
+    private fun clickNodeWithHardwareTapFallback(node: AccessibilityNodeInfo): Boolean {
+        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            Log.i(TAG, "Clicked node via ACTION_CLICK")
+            return true
+        }
+        var p = node.parent
+        var depth = 0
+        while (p != null && depth < 3) {
+            if (p.isClickable && p.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                Log.i(TAG, "Clicked parent node via ACTION_CLICK at depth $depth")
+                return true
+            }
+            p = p.parent
+            depth++
+        }
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.width() > 0 && bounds.height() > 0) {
+            val cx = bounds.centerX().toFloat()
+            val cy = bounds.centerY().toFloat()
+            Log.i(TAG, "Dispatching hardware touch gesture tap at ($cx, $cy)")
+            return clickAt(cx, cy)
+        }
+        return false
+    }
+
     fun triggerPlayLastVoiceMessageInWhatsApp() {
         pendingPlayVoiceNote = true
         rootInActiveWindow?.let { root ->
@@ -285,7 +336,8 @@ class EdvisAccessibilityService : AccessibilityService() {
             }
         }
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        for (delay in listOf(400L, 800L, 1200L, 1800L, 2500L, 3500L)) {
+        val delays = listOf(300L, 600L, 1000L, 1500L, 2200L, 3000L, 4000L, 5500L, 7000L)
+        for (delay in delays) {
             handler.postDelayed({
                 if (pendingPlayVoiceNote) {
                     rootInActiveWindow?.let { root ->
@@ -300,50 +352,89 @@ class EdvisAccessibilityService : AccessibilityService() {
     }
 
     private fun playLastVoiceMessageInWhatsApp(root: AccessibilityNodeInfo): Boolean {
+        // If we are currently looking at WhatsApp's chat list, tap the top chat to open it
+        val chatListNodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversations_row_holder")
+            .ifEmpty { root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversations_row_contact_name") }
+            .ifEmpty { root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/chat_title") }
+
         val voiceIds = listOf(
             "com.whatsapp:id/conversation_row_sound_recording_play_button",
+            "com.whatsapp:id/conversation_row_sound_recording_play_pause_button",
             "com.whatsapp:id/play",
             "com.whatsapp:id/play_pause_button",
+            "com.whatsapp:id/btn_play_pause",
             "com.whatsapp:id/voice_note_play",
-            "com.whatsapp:id/btn_play"
+            "com.whatsapp:id/btn_play",
+            "com.whatsapp:id/play_btn",
+            "com.whatsapp:id/control_btn",
+            "com.whatsapp:id/voice_note_slider",
+            "com.whatsapp:id/waveform_slider",
+            "com.whatsapp:id/voice_status_playback_view",
+            "com.whatsapp:id/audio_player_view",
+            "com.whatsapp:id/voice_note_view"
         )
+
+        val candidateNodes = mutableListOf<AccessibilityNodeInfo>()
         for (id in voiceIds) {
             val nodes = root.findAccessibilityNodeInfosByViewId(id)
-            val lastBtn = nodes.lastOrNull()
-            if (lastBtn != null) {
-                if (lastBtn.isClickable) {
-                    lastBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (!nodes.isNullOrEmpty()) {
+                candidateNodes.addAll(nodes)
+            }
+        }
+
+        collectVoiceNodesByTextOrDesc(root, candidateNodes)
+
+        if (candidateNodes.isNotEmpty()) {
+            // Sort candidates by screen bottom descending to pick the newest (bottom-most) audio in chat
+            val sorted = candidateNodes.distinct().sortedByDescending { n ->
+                val r = android.graphics.Rect()
+                n.getBoundsInScreen(r)
+                r.bottom
+            }
+
+            for (btn in sorted) {
+                val r = android.graphics.Rect()
+                btn.getBoundsInScreen(r)
+                if (r.width() <= 0 || r.height() <= 0) continue
+
+                if (clickNodeWithHardwareTapFallback(btn)) {
+                    Log.i(TAG, "Triggered WhatsApp voice note button at (${r.centerX()}, ${r.centerY()})")
                     return true
                 }
-                lastBtn.parent?.let { parent ->
-                    if (parent.isClickable) {
-                        parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        return true
-                    }
-                }
             }
         }
-        return clickLastNodeByTextOrDesc(root, listOf("reproducir", "play", "escuchar", "mensaje de voz", "nota de voz"))
+
+        // Fallback: If no voice note buttons found, but we are on the chats list, open the first chat
+        if (chatListNodes.isNotEmpty()) {
+            val firstChat = chatListNodes.firstOrNull()
+            if (firstChat != null) {
+                Log.i(TAG, "On chats list: opening topmost chat to find voice note")
+                clickNodeWithHardwareTapFallback(firstChat)
+                return false
+            }
+        }
+
+        return false
     }
 
-    private fun clickLastNodeByTextOrDesc(node: AccessibilityNodeInfo, keywords: List<String>): Boolean {
-        for (i in (node.childCount - 1) downTo 0) {
-            val child = node.getChild(i) ?: continue
-            if (clickLastNodeByTextOrDesc(child, keywords)) return true
+    private fun collectVoiceNodesByTextOrDesc(node: AccessibilityNodeInfo, list: MutableList<AccessibilityNodeInfo>) {
+        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+        val text = node.text?.toString()?.lowercase() ?: ""
+
+        val isPlay = desc.contains("reproducir") || desc.contains("play") || desc.contains("escuchar") ||
+            desc.contains("mensaje de voz") || desc.contains("nota de voz") ||
+            text.contains("reproducir") || text.contains("play") || text.contains("escuchar")
+
+        val isPause = desc.contains("pausar") || desc.contains("pause") || text.contains("pausar") || text.contains("pause")
+
+        if (isPlay && !isPause) {
+            list.add(node)
         }
 
-        val text = node.text?.toString()?.lowercase() ?: ""
-        val desc = node.contentDescription?.toString()?.lowercase() ?: ""
-        if (keywords.any { text.contains(it) || desc.contains(it) }) {
-            if (node.isClickable) {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                return true
-            } else if (node.parent?.isClickable == true) {
-                node.parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                return true
-            }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectVoiceNodesByTextOrDesc(child, list)
         }
-        return false
     }
 
     companion object {

@@ -589,8 +589,12 @@ class EdvisForegroundService : Service() {
 
                         if (isPendingMessageAudio) {
                             speakInFemaleVoice("Reproduciendo nota de voz de $sender, señor.")
-                            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, app)
-                            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+                            val opened = EdvisNotificationService.instance?.openChat(sender) ?: false
+                            if (!opened) {
+                                playVoiceNoteFromSpecificContact(sender)
+                            } else {
+                                EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+                            }
                             conversationState = ConversationState.IDLE
                             currentReplyTarget = null
                             currentReplyApp = null
@@ -793,8 +797,11 @@ class EdvisForegroundService : Service() {
             cleaned.contains("escucha el audio") || cleaned.contains("escuchar el audio") ||
             cleaned.contains("reproduce la nota") || cleaned.contains("reproducir la nota") ||
             cleaned.contains("reproduce el mensaje de voz") || cleaned.contains("reproducir el mensaje de voz") ||
-            (cleaned.contains("reproduce") && (cleaned.contains("audio") || cleaned.contains("nota"))) ||
-            (cleaned.contains("audio") && cleaned.contains("whatsapp"))) &&
+            cleaned.contains("reproduce el audio que me enviaron") || cleaned.contains("reproducir el audio que me enviaron") ||
+            cleaned.contains("pon el audio") || cleaned.contains("pon la nota") ||
+            cleaned.contains("reprodúcelo") || cleaned.contains("reproducemelo") ||
+            (cleaned.contains("reproduce") && (cleaned.contains("audio") || cleaned.contains("nota") || cleaned.contains("mensaje de voz"))) ||
+            (cleaned.contains("audio") && (cleaned.contains("whatsapp") || cleaned.contains("wasap")))) &&
             !isSendVoiceNote && !isSendWhatsAppText
 
         if (isVoiceNotePlay) {
@@ -802,7 +809,7 @@ class EdvisForegroundService : Service() {
             val deMatch = Regex("\\s+(de|del)\\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ]+)", RegexOption.IGNORE_CASE).find(cleaned)
             if (deMatch != null) {
                 val candidate = deMatch.groupValues[2].trim().lowercase()
-                if (candidate != "whatsapp" && candidate != "wasap" && candidate != "voz") {
+                if (candidate != "whatsapp" && candidate != "wasap" && candidate != "voz" && candidate != "audio") {
                     targetPerson = deMatch.groupValues[2].trim()
                 }
             }
@@ -810,11 +817,14 @@ class EdvisForegroundService : Service() {
             if (targetPerson.isNotEmpty()) {
                 playVoiceNoteFromSpecificContact(targetPerson)
             } else {
-                val app = currentReplyApp ?: EdvisNotificationService.lastSenderApp ?: "WhatsApp"
                 val sender = currentReplyTarget ?: EdvisNotificationService.lastSenderName ?: "el contacto"
                 speakInFemaleVoice("Reproduciendo audio de WhatsApp de $sender, señor.")
-                EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "whatsapp")
-                EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+                val opened = EdvisNotificationService.instance?.openChat(sender) ?: false
+                if (!opened) {
+                    playVoiceNoteFromSpecificContact(sender)
+                } else {
+                    EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+                }
             }
             return
         }
@@ -1254,11 +1264,21 @@ class EdvisForegroundService : Service() {
                                             spokenReply = "Abriendo $target, señor."
                                         }
                                     }
-                                    "play_whatsapp_voice_note" -> {
+                                    "play_whatsapp_voice_note", "play_audio" -> {
+                                        val target = args?.optString("target", "") ?: args?.optString("contact", "") ?: ""
                                         withContext(Dispatchers.Main) {
-                                            speakInFemaleVoice("Reproduciendo audio de WhatsApp, señor.")
-                                            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
-                                            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+                                            if (target.isNotBlank()) {
+                                                playVoiceNoteFromSpecificContact(target)
+                                            } else {
+                                                val sender = currentReplyTarget ?: EdvisNotificationService.lastSenderName ?: "el contacto"
+                                                speakInFemaleVoice("Reproduciendo audio de WhatsApp de $sender, señor.")
+                                                val opened = EdvisNotificationService.instance?.openChat(sender) ?: false
+                                                if (!opened) {
+                                                    playVoiceNoteFromSpecificContact(sender)
+                                                } else {
+                                                    EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+                                                }
+                                            }
                                         }
                                         return@launch
                                     }
@@ -1805,6 +1825,12 @@ class EdvisForegroundService : Service() {
 
     private fun playVoiceNoteFromSpecificContact(targetPerson: String) {
         speakInFemaleVoice("Buscando audio de $targetPerson en WhatsApp, señor.")
+        val openedViaNotif = EdvisNotificationService.instance?.openChat(targetPerson) ?: false
+        if (openedViaNotif) {
+            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+            return
+        }
+
         serviceScope.launch(Dispatchers.IO) {
             val matches = findAllMatchingContacts(targetPerson)
             val phone = matches.firstOrNull()?.number
@@ -1830,9 +1856,14 @@ class EdvisForegroundService : Service() {
         val lowerQ = query.lowercase().trim()
         if (lowerQ.contains("audio") || lowerQ.contains("whatsapp") || lowerQ.contains("wasap") ||
             lowerQ.contains("nota") || lowerQ.contains("mensaje")) {
-            speakInFemaleVoice("Reproduciendo audio de WhatsApp, señor.")
-            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "whatsapp")
-            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+            val sender = currentReplyTarget ?: EdvisNotificationService.lastSenderName ?: "el contacto"
+            speakInFemaleVoice("Reproduciendo audio de WhatsApp de $sender, señor.")
+            val opened = EdvisNotificationService.instance?.openChat(sender) ?: false
+            if (!opened) {
+                playVoiceNoteFromSpecificContact(sender)
+            } else {
+                EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+            }
             return
         }
 

@@ -48,6 +48,16 @@ class EdvisNotificationService : NotificationListenerService() {
         var callRejectAction: Notification.Action? = null
             private set
 
+        @Volatile
+        var lastContentIntent: android.app.PendingIntent? = null
+            private set
+
+        @Volatile
+        var lastAudioContentIntent: android.app.PendingIntent? = null
+            private set
+
+        val chatContentIntents = ConcurrentHashMap<String, android.app.PendingIntent>()
+
         private val WATCHED_PACKAGES = setOf(
             "com.whatsapp",
             "com.whatsapp.w4b",
@@ -165,6 +175,19 @@ class EdvisNotificationService : NotificationListenerService() {
         lastMessageText = text
         lastMessageTime = System.currentTimeMillis()
 
+        // Cache the PendingIntent to open the exact chat directly hands-free
+        val contentIntent = notification.contentIntent
+        if (contentIntent != null) {
+            lastContentIntent = contentIntent
+            if (isAudio) {
+                lastAudioContentIntent = contentIntent
+            }
+            if (sender.isNotBlank()) {
+                chatContentIntents[sender.lowercase().trim()] = contentIntent
+            }
+            chatContentIntents["last_sender"] = contentIntent
+        }
+
         Log.i(TAG, "Intercepted [$lastSenderApp] from $sender (isCall=$isCall, isAudio=$isAudio): $text")
 
         if (isCall) {
@@ -250,6 +273,35 @@ class EdvisNotificationService : NotificationListenerService() {
             true
         } catch (e: Exception) {
             Log.e(TAG, "QuickReply failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Opens the exact conversation of the target sender directly via the notification PendingIntent,
+     * without having to navigate from WhatsApp's main chats screen.
+     */
+    fun openChat(targetSender: String? = null): Boolean {
+        return try {
+            val key = targetSender?.lowercase()?.trim()
+            val intent = if (!key.isNullOrBlank()) {
+                chatContentIntents[key]
+                    ?: chatContentIntents.entries.firstOrNull { it.key.contains(key) || key.contains(it.key) }?.value
+                    ?: lastAudioContentIntent
+                    ?: lastContentIntent
+            } else {
+                lastAudioContentIntent ?: lastContentIntent
+            }
+            if (intent != null) {
+                intent.send()
+                Log.i(TAG, "Opened conversation directly via notification PendingIntent for '$targetSender'")
+                true
+            } else {
+                Log.w(TAG, "No cached PendingIntent found for '$targetSender'")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error triggering notification contentIntent: ${e.message}")
             false
         }
     }
