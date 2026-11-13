@@ -24,25 +24,50 @@ class EdvisAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // FAST ZERO-CPU BAILOUT: Do absolutely nothing unless an automated action is pending
+        if (pendingWhatsAppMessage == null && !pendingPlayVoiceNote && !pendingSendWhatsApp && !pendingRecordVoiceNote) {
+            return
+        }
+
+        val eventPkg = event?.packageName?.toString() ?: ""
+        if (!eventPkg.contains("whatsapp")) {
+            return
+        }
+
         val rootNode = rootInActiveWindow ?: return
         val pkg = rootNode.packageName?.toString() ?: ""
+        if (!pkg.contains("whatsapp")) return
 
-        if (pkg.contains("com.whatsapp")) {
-            val messageToInject = pendingWhatsAppMessage
-            if (messageToInject != null) {
-                val injected = injectAndSendWhatsApp(rootNode, messageToInject)
-                if (injected) {
-                    pendingWhatsAppMessage = null
-                    Log.i(TAG, "WhatsApp reply injected and dispatched automatically")
-                }
+        val messageToInject = pendingWhatsAppMessage
+        if (messageToInject != null) {
+            val injected = injectAndSendWhatsApp(rootNode, messageToInject)
+            if (injected) {
+                pendingWhatsAppMessage = null
+                Log.i(TAG, "WhatsApp reply injected and dispatched automatically")
             }
+        }
 
-            if (pendingPlayVoiceNote) {
-                val played = playLastVoiceMessageInWhatsApp(rootNode)
-                if (played) {
-                    pendingPlayVoiceNote = false
-                    Log.i(TAG, "WhatsApp voice message play button clicked automatically")
-                }
+        if (pendingSendWhatsApp) {
+            val sent = clickSendButtonInWhatsApp(rootNode)
+            if (sent) {
+                pendingSendWhatsApp = false
+                Log.i(TAG, "WhatsApp send button clicked automatically")
+            }
+        }
+
+        if (pendingPlayVoiceNote) {
+            val played = playLastVoiceMessageInWhatsApp(rootNode)
+            if (played) {
+                pendingPlayVoiceNote = false
+                Log.i(TAG, "WhatsApp voice message play button clicked automatically")
+            }
+        }
+
+        if (pendingRecordVoiceNote) {
+            val micClicked = clickVoiceNoteMicButtonInWhatsApp(rootNode)
+            if (micClicked) {
+                pendingRecordVoiceNote = false
+                Log.i(TAG, "WhatsApp voice note mic button triggered")
             }
         }
     }
@@ -136,7 +161,103 @@ class EdvisAccessibilityService : AccessibilityService() {
                     Log.e(TAG, "Error prev track: ${e.message}")
                 }
             }
+
+            "TYPE_AND_SEND_WHATSAPP" -> {
+                triggerSendWhatsAppMessage()
+            }
+
+            "RECORD_VOICE_NOTE_WHATSAPP" -> {
+                triggerRecordVoiceNoteInWhatsApp()
+            }
         }
+    }
+
+    fun triggerSendWhatsAppMessage() {
+        pendingSendWhatsApp = true
+        rootInActiveWindow?.let { root ->
+            if (clickSendButtonInWhatsApp(root)) {
+                pendingSendWhatsApp = false
+                return
+            }
+        }
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        for (delay in listOf(300L, 700L, 1200L, 1800L, 2500L, 3500L)) {
+            handler.postDelayed({
+                if (pendingSendWhatsApp) {
+                    rootInActiveWindow?.let { root ->
+                        if (clickSendButtonInWhatsApp(root)) {
+                            pendingSendWhatsApp = false
+                            Log.i(TAG, "WhatsApp send button clicked on retry $delay ms")
+                        }
+                    }
+                }
+            }, delay)
+        }
+    }
+
+    private fun clickSendButtonInWhatsApp(root: AccessibilityNodeInfo): Boolean {
+        val sendIds = listOf("com.whatsapp:id/send", "com.whatsapp:id/send_button", "com.whatsapp:id/btn_send")
+        for (id in sendIds) {
+            val nodes = root.findAccessibilityNodeInfosByViewId(id)
+            val btn = nodes.firstOrNull()
+            if (btn != null) {
+                if (btn.isClickable) {
+                    btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    return true
+                }
+                btn.parent?.let { parent ->
+                    if (parent.isClickable) {
+                        parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        return true
+                    }
+                }
+            }
+        }
+        return clickNodeByTextOrDesc(root, listOf("enviar", "send"))
+    }
+
+    fun triggerRecordVoiceNoteInWhatsApp() {
+        pendingRecordVoiceNote = true
+        rootInActiveWindow?.let { root ->
+            if (clickVoiceNoteMicButtonInWhatsApp(root)) {
+                pendingRecordVoiceNote = false
+                return
+            }
+        }
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        for (delay in listOf(500L, 1000L, 1600L, 2400L, 3200L)) {
+            handler.postDelayed({
+                if (pendingRecordVoiceNote) {
+                    rootInActiveWindow?.let { root ->
+                        if (clickVoiceNoteMicButtonInWhatsApp(root)) {
+                            pendingRecordVoiceNote = false
+                            Log.i(TAG, "WhatsApp voice note mic button triggered on retry $delay ms")
+                        }
+                    }
+                }
+            }, delay)
+        }
+    }
+
+    private fun clickVoiceNoteMicButtonInWhatsApp(root: AccessibilityNodeInfo): Boolean {
+        val micIds = listOf("com.whatsapp:id/voice_note_btn", "com.whatsapp:id/btn_voice_note", "com.whatsapp:id/mic_button")
+        for (id in micIds) {
+            val nodes = root.findAccessibilityNodeInfosByViewId(id)
+            val btn = nodes.firstOrNull()
+            if (btn != null) {
+                if (btn.isClickable) {
+                    btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    return true
+                }
+                btn.parent?.let { parent ->
+                    if (parent.isClickable) {
+                        parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        return true
+                    }
+                }
+            }
+        }
+        return clickNodeByTextOrDesc(root, listOf("mensaje de voz", "grabar mensaje de voz", "voice message", "record voice message"))
     }
 
     private fun clickNodeByTextOrDesc(node: AccessibilityNodeInfo, keywords: List<String>): Boolean {
@@ -238,6 +359,12 @@ class EdvisAccessibilityService : AccessibilityService() {
         @Volatile
         private var pendingPlayVoiceNote: Boolean = false
 
+        @Volatile
+        private var pendingSendWhatsApp: Boolean = false
+
+        @Volatile
+        private var pendingRecordVoiceNote: Boolean = false
+
         /**
          * Opens ANY installed application on the phone by matching either its package name
          * or its human-visible label (e.g., "WhatsApp", "YouTube", "Nequi", "Instagram", "Spotify", etc.).
@@ -319,24 +446,18 @@ class EdvisAccessibilityService : AccessibilityService() {
     private fun injectAndSendWhatsApp(root: AccessibilityNodeInfo, text: String): Boolean {
         // Locate message input field (com.whatsapp:id/entry)
         val entryNodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/entry")
-        val inputNode = entryNodes.firstOrNull() ?: return false
-
-        val args = Bundle().apply {
-            putCharSequence(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                text
-            )
+        val inputNode = entryNodes.firstOrNull()
+        if (inputNode != null) {
+            val args = Bundle().apply {
+                putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    text
+                )
+            }
+            inputNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         }
-        inputNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-        inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
 
-        // Locate and click Send button (com.whatsapp:id/send)
-        val sendNodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/send")
-        val sendBtn = sendNodes.firstOrNull()
-        if (sendBtn != null && sendBtn.isClickable) {
-            sendBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            return true
-        }
-        return false
+        return clickSendButtonInWhatsApp(root)
     }
 }

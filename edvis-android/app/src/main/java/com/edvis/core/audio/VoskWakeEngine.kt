@@ -71,64 +71,21 @@ class VoskWakeEngine(
                 }.lowercase().trim()
 
                 if (text.isNotEmpty()) {
-                    val isWake = isVoiceWindowActive ||
-                        text.contains("edvis") ||
+                    val containsWakeName = text.contains("edvis") ||
                         text.contains("elvis") ||
                         text.contains("ervis") ||
                         text.contains("edwin") ||
                         text.contains("jarvis") ||
-                        text.contains("oye") ||
-                        text.contains("hola") ||
-                        text.contains("estas ahi") ||
-                        text.contains("estás ahí") ||
-                        text.contains("abre") ||
-                        text.contains("registra") ||
-                        text.contains("gasto") ||
-                        text.contains("contesta") ||
-                        text.contains("cuelga") ||
-                        text.contains("responde") ||
-                        text.contains("dile") ||
-                        text.contains("leelo") ||
-                        text.contains("léelo") ||
-                        text.contains("leeme") ||
-                        text.contains("léeme") ||
-                        text.contains("reproduce") ||
-                        text.contains("reproducir") ||
-                        text.contains("musica") ||
-                        text.contains("música") ||
-                        text.contains("linterna") ||
-                        text.contains("bateria") ||
-                        text.contains("batería") ||
-                        text.contains("estado") ||
-                        text.contains("diagnostico") ||
-                        text.contains("diagnóstico") ||
-                        text.contains("volumen") ||
-                        text.contains("llama") ||
-                        text.contains("llamar") ||
-                        text.contains("donde") ||
-                        text.contains("dónde") ||
-                        text.contains("camara") ||
-                        text.contains("cámara") ||
-                        text.contains("luz") ||
-                        text.contains("luces") ||
-                        text.contains("taller") ||
-                        text.contains("escanea") ||
-                        text.contains("mira") ||
-                        text.contains("whatsapp") ||
-                        text.contains("wasap") ||
-                        text.contains("wsp") ||
-                        text.contains("youtube") ||
-                        text.contains("spotify") ||
-                        text.contains("hora") ||
-                        text.contains("fecha") ||
-                        text.contains("quien") ||
-                        text.contains("quién") ||
-                        text.contains("foto") ||
-                        text.contains("alarma") ||
-                        text.contains("temporizador") ||
-                        text.contains("envia") ||
-                        text.contains("envía") ||
-                        text.contains("manda")
+                        text.contains("despierta") ||
+                        text.contains("despiértate")
+
+                    val isWake = if (isVoiceWindowActive) {
+                        // In an active conversation window (prompting user), accept any spoken response
+                        true
+                    } else {
+                        // In background standby, ONLY wake when the assistant's name is actually spoken
+                        containsWakeName
+                    }
 
                     if (isWake) {
                         Log.i(TAG, "Vosk captured speech: '$text' (isFinal=$isFinal, isVoiceWindowActive=$isVoiceWindowActive)")
@@ -137,13 +94,16 @@ class VoskWakeEngine(
                             onWakeWordDetected(text)
                             return true
                         } else {
-                            // Only trigger immediately on partials for urgent single-word answers during active calls or confirmation prompts
-                            val isUrgentAnswer = text == "si" || text == "sí" || text == "no" ||
-                                text == "contesta" || text == "cuelga" || text == "corta" || text == "rechaza"
-                            if (isUrgentAnswer) {
-                                rec.reset()
-                                onWakeWordDetected(text)
-                                return true
+                            // Only trigger immediately on partials during active question/call windows
+                            if (isVoiceWindowActive) {
+                                val isUrgentAnswer = text == "si" || text == "sí" || text == "no" ||
+                                    text == "contesta" || text == "cuelga" || text == "corta" || text == "rechaza" ||
+                                    text == "reproduce" || text == "reproducir"
+                                if (isUrgentAnswer) {
+                                    rec.reset()
+                                    onWakeWordDetected(text)
+                                    return true
+                                }
                             }
                         }
                     }

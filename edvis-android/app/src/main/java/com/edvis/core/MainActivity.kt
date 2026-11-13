@@ -329,32 +329,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun handleSpokenVoiceCommand(spokenText: String) {
-        val lower = spokenText.lowercase().trim()
-        val cleaned = lower.replace(Regex("^(oye\\s+|hola\\s+)?(edvis|elvis|ervis|edwin|jarvis|ed)[,\\s]*", RegexOption.IGNORE_CASE), "").trim()
-
         runOnUiThread {
             val safe = JSONObject.quote(spokenText)
             webView?.evaluateJavascript("if (window.onNativeVoiceCommand) window.onNativeVoiceCommand($safe);", null)
-        }
-
-        // 1. If there's an ongoing interactive conversation (e.g. "¿Deseas responder?") or ringing call, prioritize it
-        val svc = EdvisForegroundService.instance
-        if (svc != null && (svc.hasActiveConversation() || svc.isCallRinging)) {
-            svc.processAutonomousVoiceCommand(spokenText)
-            return
-        }
-
-        if (cleaned.startsWith("abre ") || cleaned.startsWith("abrir ") || lower.startsWith("abre ") || lower.startsWith("abrir ")) {
-            val appQuery = (if (cleaned.startsWith("abre ") || cleaned.startsWith("abrir ")) cleaned else lower)
-                .substringAfter("abre ").substringAfter("abrir ").trim()
-            tts?.speak("Abriendo $appQuery, señor", TextToSpeech.QUEUE_FLUSH, null, "edvis_app")
-            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, appQuery)
-            return
-        }
-
-        if (cleaned.isEmpty() || cleaned == "estas ahi" || cleaned == "estás ahí" || cleaned == "hola") {
-            tts?.speak("En línea, señor. Todos los sistemas operativos listos. ¿Cuál es su orden?", TextToSpeech.QUEUE_FLUSH, null, "edvis_greeting")
-            return
         }
 
         EdvisForegroundService.instance?.processAutonomousVoiceCommand(spokenText)
