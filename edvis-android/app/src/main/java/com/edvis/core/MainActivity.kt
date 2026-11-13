@@ -329,12 +329,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun handleSpokenVoiceCommand(spokenText: String) {
+        val lower = spokenText.lowercase().trim()
+        val cleaned = lower.replace(Regex("^(oye\\s+|hola\\s+)?(edvis|elvis|ervis|edwin|jarvis|ed)[,\\s]*", RegexOption.IGNORE_CASE), "").trim()
+
+        // 1. If there's an ongoing interactive conversation or ringing call, prioritize it
+        val svc = EdvisForegroundService.instance
+        if (svc != null && (svc.hasActiveConversation() || svc.isCallRinging)) {
+            svc.processAutonomousVoiceCommand(spokenText, fromMainActivity = true)
+            return
+        }
+
+        // 2. Direct fast app opening
+        if (cleaned.startsWith("abre ") || cleaned.startsWith("abrir ") || lower.startsWith("abre ") || lower.startsWith("abrir ")) {
+            val appQuery = (if (cleaned.startsWith("abre ") || cleaned.startsWith("abrir ")) cleaned else lower)
+                .substringAfter("abre ").substringAfter("abrir ").trim()
+            tts?.speak("Abriendo $appQuery, señor", TextToSpeech.QUEUE_FLUSH, null, "edvis_app")
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, appQuery)
+            return
+        }
+
+        // 3. Quick greetings
+        if (cleaned.isEmpty() || cleaned == "estas ahi" || cleaned == "estás ahí" || cleaned == "hola") {
+            tts?.speak("En línea, señor. Todos los sistemas operativos listos. ¿Cuál es su orden?", TextToSpeech.QUEUE_FLUSH, null, "edvis_greeting")
+            return
+        }
+
+        // 4. Send to Webview AI for full intelligent conversational response with history
         runOnUiThread {
             val safe = JSONObject.quote(spokenText)
             webView?.evaluateJavascript("if (window.onNativeVoiceCommand) window.onNativeVoiceCommand($safe);", null)
         }
 
-        EdvisForegroundService.instance?.processAutonomousVoiceCommand(spokenText)
+        // 5. Also let Foreground Service check if it's an explicit device action (voice note play, photo, alarm, etc.)
+        EdvisForegroundService.instance?.processAutonomousVoiceCommand(spokenText, fromMainActivity = true)
     }
 
     override fun onResume() {

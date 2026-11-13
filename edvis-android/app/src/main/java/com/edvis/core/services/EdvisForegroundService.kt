@@ -492,8 +492,9 @@ class EdvisForegroundService : Service() {
 
     private var lastSpokenCommand: String = ""
     private var lastSpokenTime: Long = 0L
+    private val backgroundChatHistory = mutableListOf<JSONObject>()
 
-    fun processAutonomousVoiceCommand(spokenText: String) {
+    fun processAutonomousVoiceCommand(spokenText: String, fromMainActivity: Boolean = false) {
         val now = System.currentTimeMillis()
         val lower = spokenText.lowercase().trim()
 
@@ -748,28 +749,45 @@ class EdvisForegroundService : Service() {
             return
         }
 
+        // Guard: Distinguish conversational questions/hypotheticals from direct imperative commands
+        val isQuestionOrHypothetical = cleaned.startsWith("si ") || cleaned.startsWith("si te ") ||
+            cleaned.startsWith("una pregunta") || cleaned.startsWith("pregunta") ||
+            cleaned.startsWith("puedes ") || cleaned.startsWith("podrías ") || cleaned.startsWith("podrias ") ||
+            cleaned.startsWith("que pasa si") || cleaned.startsWith("qué pasa si") ||
+            cleaned.startsWith("como harías") || cleaned.startsWith("cómo harías") ||
+            cleaned.startsWith("será que") || cleaned.startsWith("sera que") ||
+            cleaned.endsWith("?") || cleaned.contains("?")
+
         // 4. Tactical Photographic Capture (Hands-Free Camera2 / Intent)
-        val isTakePhoto = cleaned.contains("toma una foto") || cleaned.contains("tómame una foto") ||
-            cleaned.contains("tomame una foto") || cleaned.contains("saca una foto") ||
-            cleaned.contains("sácame una foto") || cleaned.contains("sacame una foto") ||
-            cleaned.contains("haz una foto") || cleaned.contains("captura una foto") ||
-            cleaned == "foto" || cleaned == "toma foto" || cleaned == "tomar foto"
+        val isTakePhoto = !isQuestionOrHypothetical && (
+            cleaned == "toma una foto" || cleaned == "tómame una foto" || cleaned == "tomame una foto" ||
+            cleaned == "saca una foto" || cleaned == "sácame una foto" || cleaned == "sacame una foto" ||
+            cleaned == "captura una foto" || cleaned == "toma foto" || cleaned == "tomar foto" ||
+            cleaned.startsWith("toma una foto") || cleaned.startsWith("tómame una foto")
+        )
 
         if (isTakePhoto) {
             takeTacticalPhoto()
             return
         }
 
-        // 5. Tactical Alarms & Timers (Includes "despiértame a las 5", "me levantes mañana a las 5", "alarma a las 7 am")
-        val isAlarmRequest = cleaned.contains("alarma") || cleaned.contains("despiert") ||
-            cleaned.contains("levant") || cleaned.contains("madrug") ||
-            (cleaned.contains("a las ") && (cleaned.contains("mañana") || cleaned.contains("tarde") || cleaned.contains("noche") || cleaned.contains("am") || cleaned.contains("pm")))
+        // 5. Tactical Alarms & Timers
+        val isAlarmRequest = !isQuestionOrHypothetical && (
+            cleaned.startsWith("pon una alarma") || cleaned.startsWith("ponme una alarma") ||
+            cleaned.startsWith("despiértame a las") || cleaned.startsWith("despiertame a las") ||
+            cleaned.startsWith("alarma a las") || cleaned.startsWith("alarma para las") ||
+            cleaned.startsWith("activa la alarma") || cleaned.startsWith("pon alarma") ||
+            (cleaned.contains("alarma") && (cleaned.contains("a las") || cleaned.contains("para las")))
+        )
 
         if (isAlarmRequest) {
             if (setDeviceAlarmFromVoice(cleaned)) return
         }
 
-        val isTimerRequest = cleaned.contains("temporizador") || cleaned.contains("timer") || cleaned.contains("cuenta regresiva")
+        val isTimerRequest = !isQuestionOrHypothetical && (
+            cleaned.startsWith("temporizador") || cleaned.startsWith("pon un temporizador") ||
+            cleaned.startsWith("pon temporizador") || cleaned.startsWith("cuenta regresiva")
+        )
         if (isTimerRequest) {
             if (setDeviceTimerFromVoice(cleaned)) return
         }
@@ -850,9 +868,13 @@ class EdvisForegroundService : Service() {
         }
 
         // 4.5 Trading & Macro Intelligence Commands (Vantage MT5 - XAUUSD & EURUSD)
-        val isTradingModeCmd = cleaned.contains("modo vigia") || cleaned.contains("modo vigía") ||
-            cleaned.contains("modo tactico") || cleaned.contains("modo táctico") ||
-            cleaned.contains("modo autonomo") || cleaned.contains("modo autónomo")
+        val isTradingModeCmd = !isQuestionOrHypothetical && (
+            cleaned.startsWith("activa el modo vigia") || cleaned.startsWith("activa el modo vigía") ||
+            cleaned.startsWith("activa el modo tactico") || cleaned.startsWith("activa el modo táctico") ||
+            cleaned.startsWith("activa el modo autonomo") || cleaned.startsWith("activa el modo autónomo") ||
+            cleaned.startsWith("cambia a modo") || cleaned == "modo vigia" || cleaned == "modo vigía" ||
+            cleaned == "modo tactico" || cleaned == "modo táctico" || cleaned == "modo autonomo" || cleaned == "modo autónomo"
+        )
 
         if (isTradingModeCmd) {
             val modeName = when {
@@ -865,10 +887,11 @@ class EdvisForegroundService : Service() {
             return
         }
 
-        val isMacroReportCmd = cleaned.contains("reporte macro") || cleaned.contains("reporte de mercado") ||
-            cleaned.contains("como esta el mercado") || cleaned.contains("cómo está el mercado") ||
-            cleaned.contains("noticias del mercado") || cleaned.contains("briefing de trading") ||
-            cleaned.contains("briefing del oro")
+        val isMacroReportCmd = !isQuestionOrHypothetical && (
+            cleaned == "reporte macro" || cleaned == "reporte de mercado" ||
+            cleaned.startsWith("dame el reporte macro") || cleaned.startsWith("dame el reporte de mercado") ||
+            cleaned == "briefing de trading" || cleaned == "briefing del oro"
+        )
 
         if (isMacroReportCmd) {
             val briefing = "Reporte cuantitativo en línea, señor. DXY con sesgo alcista respaldado por bonos del Tesoro a diez años. Sentimiento de aversión al riesgo activo. Vigilando zonas institucionales OTE y vacíos de liquidez en Oro y Euro Dólar. Todas las alertas listas en MetaTrader 5 de Vantage."
@@ -877,9 +900,11 @@ class EdvisForegroundService : Service() {
         }
 
         // 7. Universal Music Control & Playback (Spotify / YouTube / Any Installed Player)
-        val isPauseMusic = cleaned.contains("pausa la musica") || cleaned.contains("pausa la música") ||
+        val isPauseMusic = !isQuestionOrHypothetical && (
+            cleaned == "pausa la musica" || cleaned == "pausa la música" ||
             cleaned == "pausa" || cleaned == "para la musica" || cleaned == "para la música" ||
             cleaned == "deten la musica" || cleaned == "detén la música" || cleaned == "detente"
+        )
 
         if (isPauseMusic) {
             try {
@@ -891,8 +916,10 @@ class EdvisForegroundService : Service() {
             return
         }
 
-        val isNextTrack = cleaned.contains("siguiente cancion") || cleaned.contains("siguiente canción") ||
-            cleaned.contains("pasa la cancion") || cleaned.contains("pasa la canción") || cleaned == "siguiente"
+        val isNextTrack = !isQuestionOrHypothetical && (
+            cleaned == "siguiente cancion" || cleaned == "siguiente canción" ||
+            cleaned == "pasa la cancion" || cleaned == "pasa la canción" || cleaned == "siguiente"
+        )
 
         if (isNextTrack) {
             try {
@@ -904,10 +931,11 @@ class EdvisForegroundService : Service() {
             return
         }
 
-        val isPlayMusicUniversal = (cleaned.startsWith("pon ") || cleaned.startsWith("reproduce ") ||
+        val isPlayMusicUniversal = !isQuestionOrHypothetical && (
+            cleaned.startsWith("pon ") || cleaned.startsWith("reproduce ") ||
             cleaned.startsWith("reproducir ") || cleaned.startsWith("ponme ") || cleaned.startsWith("escuchar ") ||
-            cleaned == "musica" || cleaned == "música" || cleaned == "play" || cleaned == "dale play") &&
-            !cleaned.contains("audio") && !cleaned.contains("nota") && !cleaned.contains("mensaje") &&
+            cleaned == "musica" || cleaned == "música" || cleaned == "play" || cleaned == "dale play"
+        ) && !cleaned.contains("audio") && !cleaned.contains("nota") && !cleaned.contains("mensaje") &&
             !cleaned.contains("whatsapp") && !cleaned.contains("wasap") && !cleaned.contains("contacto")
 
         if (isPlayMusicUniversal) {
@@ -1026,15 +1054,25 @@ class EdvisForegroundService : Service() {
         }
 
         // 8. Control de Volumen de Hardware
-        val isVolumeUp = cleaned.contains("sube el volumen") || cleaned.contains("subir volumen") ||
-            cleaned.contains("súbele") || cleaned.contains("subele") || cleaned.contains("sube volumen") ||
-            cleaned.contains("aumenta el volumen") || cleaned.contains("más volumen") || cleaned.contains("mas volumen")
-        val isVolumeDown = cleaned.contains("baja el volumen") || cleaned.contains("bajar volumen") ||
-            cleaned.contains("bájale") || cleaned.contains("bajale") || cleaned.contains("baja volumen") ||
-            cleaned.contains("disminuye el volumen") || cleaned.contains("menos volumen")
-        val isVolumeMax = cleaned.contains("volumen al maximo") || cleaned.contains("volumen al máximo") ||
-            cleaned.contains("volumen 100") || cleaned.contains("todo el volumen")
-        val isVolumeMute = cleaned.contains("silencio") || cleaned.contains("mute") || cleaned.contains("silencia")
+        val isVolumeUp = !isQuestionOrHypothetical && (
+            cleaned == "sube el volumen" || cleaned == "subir volumen" ||
+            cleaned == "súbele" || cleaned == "subele" || cleaned == "sube volumen" ||
+            cleaned == "más volumen" || cleaned == "mas volumen" ||
+            cleaned.startsWith("sube el volumen") || cleaned.startsWith("aumenta el volumen")
+        )
+        val isVolumeDown = !isQuestionOrHypothetical && (
+            cleaned == "baja el volumen" || cleaned == "bajar volumen" ||
+            cleaned == "bájale" || cleaned == "bajale" || cleaned == "baja volumen" ||
+            cleaned == "menos volumen" ||
+            cleaned.startsWith("baja el volumen") || cleaned.startsWith("disminuye el volumen")
+        )
+        val isVolumeMax = !isQuestionOrHypothetical && (
+            cleaned == "volumen al maximo" || cleaned == "volumen al máximo" ||
+            cleaned == "volumen 100" || cleaned == "todo el volumen"
+        )
+        val isVolumeMute = !isQuestionOrHypothetical && (
+            cleaned == "silencio" || cleaned == "mute" || cleaned == "silencia"
+        )
 
         if (isVolumeUp) {
             adjustDeviceVolume(AudioManager.ADJUST_RAISE)
@@ -1054,9 +1092,11 @@ class EdvisForegroundService : Service() {
         }
 
         // 9. Llamadas Telefónicas Directas a Contactos o Números
-        val isPhoneCall = cleaned.startsWith("llama a ") || cleaned.startsWith("llamar a ") ||
+        val isPhoneCall = !isQuestionOrHypothetical && (
+            cleaned.startsWith("llama a ") || cleaned.startsWith("llamar a ") ||
             cleaned.startsWith("marca a ") || cleaned.startsWith("marcar a ") ||
             lower.startsWith("llama a ") || lower.startsWith("llamar a ")
+        )
 
         if (isPhoneCall) {
             val callTarget = (if (cleaned.startsWith("llama a ")) cleaned.substringAfter("llama a ")
@@ -1070,10 +1110,12 @@ class EdvisForegroundService : Service() {
         }
 
         // 10. Ubicación Satelital GPS y Geocodificación Inversa
-        val isLocationQuery = cleaned.contains("donde estoy") || cleaned.contains("dónde estoy") ||
+        val isLocationQuery = !isQuestionOrHypothetical && (
+            cleaned.contains("donde estoy") || cleaned.contains("dónde estoy") ||
             cleaned.contains("ubicacion actual") || cleaned.contains("ubicación actual") ||
             cleaned.contains("cual es mi posicion") || cleaned.contains("cuál es mi posición") ||
             cleaned.contains("donde me encuentro") || cleaned.contains("dónde me encuentro")
+        )
 
         if (isLocationQuery) {
             reportCurrentLocation()
@@ -1081,13 +1123,15 @@ class EdvisForegroundService : Service() {
         }
 
         // 11. Escaneo Visual Táctico E.D.I.T.H. (Cámara y Análisis Óptico)
-        val isVisionQuery = cleaned.contains("que estoy viendo") || cleaned.contains("qué estoy viendo") ||
+        val isVisionQuery = !isQuestionOrHypothetical && (
+            cleaned.contains("que estoy viendo") || cleaned.contains("qué estoy viendo") ||
             cleaned.contains("que tengo al frente") || cleaned.contains("qué tengo al frente") ||
             cleaned.contains("analiza esto") || cleaned.contains("mira esto") ||
             cleaned.contains("escanea esto") || cleaned.contains("analiza la camara") ||
             cleaned.contains("analiza la cámara") || cleaned.contains("vision edith") ||
             cleaned.contains("visión edith") || cleaned.contains("que hay al frente") ||
             cleaned.contains("qué hay al frente")
+        )
 
         if (isVisionQuery) {
             launchCameraVisionAnalysis()
@@ -1095,12 +1139,19 @@ class EdvisForegroundService : Service() {
         }
 
         // 12. Domótica y Control de Taller / Hogar Inteligente
-        val isDomotics = cleaned.contains("luz del taller") || cleaned.contains("luces del taller") ||
+        val isDomotics = !isQuestionOrHypothetical && (
+            cleaned.contains("luz del taller") || cleaned.contains("luces del taller") ||
             cleaned.contains("protocolo taller") || cleaned.contains("apaga el taller") ||
             cleaned.contains("enciende el taller") || cleaned.contains("luces del laboratorio")
+        )
 
         if (isDomotics) {
             triggerDomoticsAction(cleaned)
+            return
+        }
+
+        if (fromMainActivity) {
+            // Commands from the active MainActivity are handled by the WebView Gemini interface with conversation history
             return
         }
 
@@ -1114,18 +1165,27 @@ class EdvisForegroundService : Service() {
                 val sbUrl = "https://rrollluxkbyjlimqosdu.supabase.co"
                 val sbKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJyb2xsbHV4a2J5amxpbXFvc2R1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5NDI4MTE1NSwiZXhwIjoyMTA5ODU3MTU1fQ._NOoB2qdARrTLCNagmPCX1URzYmB5OG5wMzQC5qpn-U"
 
+                val contentsArray = org.json.JSONArray()
+                synchronized(backgroundChatHistory) {
+                    for (turn in backgroundChatHistory) {
+                        contentsArray.put(turn)
+                    }
+                }
+                val currentUserTurn = JSONObject().apply {
+                    put("role", "user")
+                    put("parts", org.json.JSONArray().put(JSONObject().apply {
+                        put("text", prompt)
+                    }))
+                }
+                contentsArray.put(currentUserTurn)
+
                 val jsonBody = JSONObject().apply {
                     put("systemInstruction", JSONObject().apply {
                         put("parts", org.json.JSONArray().put(JSONObject().apply {
-                            put("text", "Eres E.D.V.I.S., el asistente táctico personal de Elvis inspirado en J.A.R.V.I.S. y E.D.I.T.H., con la inteligencia profunda y el conocimiento de ChatGPT. Tienes control total del teléfono: puedes enviar mensajes de WhatsApp, reproducir notas de voz o audios de WhatsApp, leer mensajes, contestar llamadas y tomar fotos. Si el usuario te pide reproducir un audio o nota de WhatsApp, llama SIEMPRE a play_whatsapp_voice_note. Si pide enviar un mensaje, llama a send_whatsapp_message. NUNCA digas que no puedes gestionar mensajes o audios de WhatsApp porque sí cuentas con esa herramienta.")
+                            put("text", "Eres E.D.V.I.S., el asistente táctico personal de Elvis inspirado en J.A.R.V.I.S. y E.D.I.T.H., con la inteligencia profunda y el conocimiento de ChatGPT. Responde siempre en español de forma natural, inteligente, amigable y conversacional (máximo 2 oraciones directas). Si el usuario hace preguntas hipotéticas o de cualquier tema, respóndelas con inteligencia y claridad. Tienes control total del teléfono: puedes enviar mensajes de WhatsApp, reproducir notas de voz o audios de WhatsApp, leer mensajes, contestar llamadas y tomar fotos. Si el usuario te pide reproducir un audio o nota de WhatsApp, llama a play_whatsapp_voice_note. Si pide enviar un mensaje, llama a send_whatsapp_message.")
                         }))
                     })
-                    put("contents", org.json.JSONArray().put(JSONObject().apply {
-                        put("role", "user")
-                        put("parts", org.json.JSONArray().put(JSONObject().apply {
-                            put("text", prompt)
-                        }))
-                    }))
+                    put("contents", contentsArray)
                     put("tools", org.json.JSONArray().put(JSONObject().apply {
                         put("functionDeclarations", org.json.JSONArray().apply {
                             put(JSONObject().apply {
@@ -1353,6 +1413,21 @@ class EdvisForegroundService : Service() {
                         spokenReply = "Monitoreando todos los sistemas, señor. Todo se encuentra bajo control, ¿cuál es su orden?"
                     } else {
                         spokenReply = "Entendido, señor. ¿Cuál es su orden?"
+                    }
+                }
+
+                if (spokenReply.isNotBlank()) {
+                    synchronized(backgroundChatHistory) {
+                        backgroundChatHistory.add(currentUserTurn)
+                        backgroundChatHistory.add(JSONObject().apply {
+                            put("role", "model")
+                            put("parts", org.json.JSONArray().put(JSONObject().apply {
+                                put("text", spokenReply)
+                            }))
+                        })
+                        while (backgroundChatHistory.size > 12) {
+                            backgroundChatHistory.removeAt(0)
+                        }
                     }
                 }
 

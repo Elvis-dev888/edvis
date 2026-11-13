@@ -77,7 +77,11 @@ class VoskWakeEngine(
                         text.contains("edwin") ||
                         text.contains("jarvis") ||
                         text.contains("despierta") ||
-                        text.contains("despiértate")
+                        text.contains("despiértate") ||
+                        text.contains("estas ahi") ||
+                        text.contains("estás ahí") ||
+                        text.contains("oye") ||
+                        text.contains("hola")
 
                     val isWake = if (isVoiceWindowActive) {
                         // In an active conversation window (prompting user), accept any spoken response

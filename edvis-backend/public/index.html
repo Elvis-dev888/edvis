@@ -897,12 +897,6 @@
     }
 
     window.onNativeVoiceCommand = function(text) {
-      if (window.EdvisNativeAndroid) {
-        addLog(`🎙️ Tú: "${text}"`, 'log-user');
-        const micText = document.getElementById('liveMicText');
-        if (micText) micText.innerHTML = `🎙️ <b>ESCUCHADO:</b> "${text}"`;
-        return;
-      }
       handleAnyVoiceCommand(text);
     };
 
