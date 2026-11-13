@@ -57,7 +57,10 @@ class BluetoothScoManager(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val scoDevice = audioManager.availableCommunicationDevices.firstOrNull {
                     it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                        it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                        it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                        it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                        it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                        it.type == AudioDeviceInfo.TYPE_USB_HEADSET
                 }
                 if (scoDevice != null) {
                     audioManager.mode = AudioManager.MODE_IN_COMMUNICATION

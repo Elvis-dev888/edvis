@@ -103,8 +103,18 @@ class EdvisForegroundService : Service() {
         IDLE,
         AWAITING_READ_CONFIRMATION,      // "Señor, tiene un nuevo mensaje de [Persona] en [App]. ¿Desea que se lo lea?"
         AWAITING_REPLY_CONFIRMATION,     // "¿Deseas responder?"
-        AWAITING_REPLY_MESSAGE           // "¿Qué mensaje le digo a [Persona]?"
+        AWAITING_REPLY_MESSAGE,          // "¿Qué mensaje le digo a [Persona]?"
+        AWAITING_CONTACT_SELECTION       // "¿A cuál de los dos le envío el mensaje?"
     }
+
+    data class ContactMatch(val name: String, val number: String)
+
+    @Volatile
+    private var pendingDisambiguationMessage: String? = null
+    @Volatile
+    private var pendingDisambiguationIsAudio: Boolean = false
+    @Volatile
+    private var pendingDisambiguationMatches: List<ContactMatch> = emptyList()
 
     @Volatile
     var isSleepingMode = false
@@ -503,12 +513,15 @@ class EdvisForegroundService : Service() {
 
         val isWakeUpCommand = lower.contains("despierta") || lower.contains("despiértate") || lower.contains("despiertate") ||
             lower.contains("reactívate") || lower.contains("reactivate") || lower.contains("actívate") || lower.contains("activate") ||
-            (lower.contains("edvis") && (lower.contains("arriba") || lower.contains("en línea") || lower.contains("en linea")))
+            lower.contains("estas ahi") || lower.contains("estás ahí") ||
+            lower == "edvis" || lower == "elvis" || lower == "ervis" || lower == "oye edvis" || lower == "hola edvis" ||
+            lower.startsWith("edvis ") || lower.startsWith("oye edvis ") ||
+            (lower.contains("edvis") && (lower.contains("arriba") || lower.contains("en línea") || lower.contains("en linea") || lower.contains("hola")))
 
         if (isSleepingMode) {
             if (isWakeUpCommand) {
                 isSleepingMode = false
-                speakInFemaleVoice("Sistemas reactivados, señor. A su entera disposición.")
+                speakInFemaleVoice("Aquí estoy, señor. Sistemas reactivados. ¿Cuál es su orden?")
                 return
             }
             Log.d(TAG, "Assistant in sleep mode, ignoring: $spokenText")
@@ -667,6 +680,43 @@ class EdvisForegroundService : Service() {
                     return
                 }
 
+                ConversationState.AWAITING_CONTACT_SELECTION -> {
+                    val isCancel = cleaned == "cancelar" || cleaned == "déjalo" || cleaned == "dejalo" || cleaned == "ninguno"
+                    if (isCancel) {
+                        conversationState = ConversationState.IDLE
+                        pendingDisambiguationMatches = emptyList()
+                        pendingDisambiguationMessage = null
+                        speakInFemaleVoice("Operación cancelada, señor.")
+                        return
+                    }
+
+                    val normResp = normalizeContactText(cleaned)
+                    val selected = pendingDisambiguationMatches.firstOrNull { match ->
+                        val normName = normalizeContactText(match.name)
+                        normName.contains(normResp) || normResp.contains(normName) ||
+                            (cleaned.contains("primero") && match == pendingDisambiguationMatches.getOrNull(0)) ||
+                            (cleaned.contains("segundo") && match == pendingDisambiguationMatches.getOrNull(1)) ||
+                            (cleaned.contains("tercero") && match == pendingDisambiguationMatches.getOrNull(2))
+                    } ?: pendingDisambiguationMatches.firstOrNull()
+
+                    conversationState = ConversationState.IDLE
+                    val msg = pendingDisambiguationMessage
+                    val isAudio = pendingDisambiguationIsAudio
+                    pendingDisambiguationMatches = emptyList()
+                    pendingDisambiguationMessage = null
+
+                    if (selected != null) {
+                        if (isAudio) {
+                            dispatchWhatsAppVoiceNoteToNumber(selected.name, selected.number)
+                        } else if (msg != null) {
+                            dispatchWhatsAppToNumber(selected.name, selected.number, msg)
+                        }
+                    } else {
+                        speakInFemaleVoice("No pude identificar el contacto, señor. Operación cancelada.")
+                    }
+                    return
+                }
+
                 else -> {}
             }
         }
@@ -748,11 +798,24 @@ class EdvisForegroundService : Service() {
             !isSendVoiceNote && !isSendWhatsAppText
 
         if (isVoiceNotePlay) {
-            val app = currentReplyApp ?: EdvisNotificationService.lastSenderApp ?: "WhatsApp"
-            val sender = currentReplyTarget ?: EdvisNotificationService.lastSenderName ?: "el contacto"
-            speakInFemaleVoice("Reproduciendo audio de WhatsApp de $sender, señor.")
-            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "whatsapp")
-            EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+            var targetPerson = ""
+            val deMatch = Regex("\\s+(de|del)\\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ]+)", RegexOption.IGNORE_CASE).find(cleaned)
+            if (deMatch != null) {
+                val candidate = deMatch.groupValues[2].trim().lowercase()
+                if (candidate != "whatsapp" && candidate != "wasap" && candidate != "voz") {
+                    targetPerson = deMatch.groupValues[2].trim()
+                }
+            }
+
+            if (targetPerson.isNotEmpty()) {
+                playVoiceNoteFromSpecificContact(targetPerson)
+            } else {
+                val app = currentReplyApp ?: EdvisNotificationService.lastSenderApp ?: "WhatsApp"
+                val sender = currentReplyTarget ?: EdvisNotificationService.lastSenderName ?: "el contacto"
+                speakInFemaleVoice("Reproduciendo audio de WhatsApp de $sender, señor.")
+                EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "whatsapp")
+                EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
+            }
             return
         }
 
@@ -1546,23 +1609,30 @@ class EdvisForegroundService : Service() {
             var text = query.replace(Regex("^(por\\s+favor\\s+|por\\s+fa\\s+)?(envía|envia|manda|mandar|graba)(le)?(\\s+un|\\s+una)?(\\s+audio|\\s+nota\\s+de\\s+voz|\\s+mensaje\\s+de\\s+voz)?(\\s+por|\\s+de)?(\\s+whatsapp|\\s+wasap|\\s+wsp)?(\\s+a|\\s+al)?\\s+", RegexOption.IGNORE_CASE), "").trim()
             val targetName = text.replace(Regex("^(el|la|mi)\\s+"), "").trim()
             if (targetName.isNotEmpty()) {
-                speakInFemaleVoice("Abriendo chat con $targetName para su mensaje de voz, señor.")
                 serviceScope.launch(Dispatchers.IO) {
-                    val phone = findPhoneNumberForContact(targetName)
+                    val matches = findAllMatchingContacts(targetName)
                     withContext(Dispatchers.Main) {
-                        if (!phone.isNullOrBlank()) {
-                            val cleanPhone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace("+", "")
-                            val formattedPhone = if (cleanPhone.length == 10 && cleanPhone.startsWith("3")) "57$cleanPhone" else cleanPhone
-                            val url = "https://api.whatsapp.com/send?phone=$formattedPhone"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                                setPackage("com.whatsapp")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            startActivity(intent)
-                        } else {
-                            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
+                        if (matches.size > 1) {
+                            pendingDisambiguationMessage = null
+                            pendingDisambiguationIsAudio = true
+                            pendingDisambiguationMatches = matches
+                            conversationState = ConversationState.AWAITING_CONTACT_SELECTION
+                            conversationExpiresAt = System.currentTimeMillis() + 45_000L
+                            activateVoiceListeningWindow(45_000L)
+
+                            val options = matches.take(3).joinToString(" o ") { it.name }
+                            speakInFemaleVoice("Encontré varios contactos: $options, señor. ¿A cuál de ellos le envío el audio?")
+                            return@withContext
                         }
-                        EdvisAccessibilityService.instance?.triggerRecordVoiceNoteInWhatsApp()
+
+                        val target = matches.firstOrNull()
+                        if (target != null) {
+                            dispatchWhatsAppVoiceNoteToNumber(target.name, target.number)
+                        } else {
+                            speakInFemaleVoice("No encontré el contacto de $targetName en su agenda telefónica, señor. Abriendo WhatsApp.")
+                            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
+                            EdvisAccessibilityService.instance?.triggerRecordVoiceNoteInWhatsApp()
+                        }
                     }
                 }
                 return true
@@ -1605,9 +1675,10 @@ class EdvisForegroundService : Service() {
         return false
     }
 
-    private fun findPhoneNumberForContact(queryName: String): String? {
+    private fun findAllMatchingContacts(queryName: String): List<ContactMatch> {
         val cleanQuery = normalizeContactText(queryName)
-        if (cleanQuery.isEmpty()) return null
+        if (cleanQuery.isEmpty()) return emptyList()
+        val matches = mutableListOf<ContactMatch>()
         try {
             val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
             val projection = arrayOf(
@@ -1617,24 +1688,23 @@ class EdvisForegroundService : Service() {
             contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
                 val numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
                 val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                var bestNumber: String? = null
+                val seenNumbers = mutableSetOf<String>()
                 while (cursor.moveToNext()) {
                     val name = cursor.getString(nameIdx) ?: continue
                     val number = cursor.getString(numIdx) ?: continue
                     val normName = normalizeContactText(name)
-                    if (normName == cleanQuery) {
-                        return number
-                    }
-                    if (normName.contains(cleanQuery) || cleanQuery.contains(normName)) {
-                        bestNumber = number
+                    val cleanNum = number.replace(Regex("[^0-9+]"), "")
+                    if (cleanNum in seenNumbers) continue
+                    if (normName == cleanQuery || normName.contains(cleanQuery) || cleanQuery.contains(normName)) {
+                        seenNumbers.add(cleanNum)
+                        matches.add(ContactMatch(name, number))
                     }
                 }
-                if (bestNumber != null) return bestNumber
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error looking up contact: ${e.message}", e)
+            Log.e(TAG, "Error looking up contact matches: ${e.message}", e)
         }
-        return null
+        return matches
     }
 
     private fun normalizeContactText(str: String): String {
@@ -1643,30 +1713,88 @@ class EdvisForegroundService : Service() {
     }
 
     private fun sendDirectWhatsAppToContact(targetName: String, message: String) {
-        speakInFemaleVoice("Enviando WhatsApp a $targetName, señor.")
-
         serviceScope.launch(Dispatchers.IO) {
-            val phoneNumber = findPhoneNumberForContact(targetName)
+            val matches = findAllMatchingContacts(targetName)
             withContext(Dispatchers.Main) {
-                if (!phoneNumber.isNullOrBlank()) {
-                    val cleanPhone = phoneNumber.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace("+", "")
-                    val formattedPhone = if (cleanPhone.length == 10 && cleanPhone.startsWith("3")) "57$cleanPhone" else cleanPhone
-                    try {
-                        val url = "https://api.whatsapp.com/send?phone=$formattedPhone&text=${Uri.encode(message)}"
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                            setPackage("com.whatsapp")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(intent)
-                        EdvisAccessibilityService.instance?.triggerSendWhatsAppMessage()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Direct WhatsApp intent error: ${e.message}", e)
-                        EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
-                    }
+                if (matches.size > 1) {
+                    pendingDisambiguationMessage = message
+                    pendingDisambiguationIsAudio = false
+                    pendingDisambiguationMatches = matches
+                    conversationState = ConversationState.AWAITING_CONTACT_SELECTION
+                    conversationExpiresAt = System.currentTimeMillis() + 45_000L
+                    activateVoiceListeningWindow(45_000L)
+
+                    val options = matches.take(3).joinToString(" o ") { it.name }
+                    speakInFemaleVoice("Encontré varios contactos con ese nombre: $options, señor. ¿A cuál de ellos le envío el mensaje?")
+                    return@withContext
+                }
+
+                val target = matches.firstOrNull()
+                if (target != null) {
+                    dispatchWhatsAppToNumber(target.name, target.number, message)
                 } else {
-                    speakInFemaleVoice("No encontré el contacto de $targetName en la agenda telefónica, señor. Abriendo WhatsApp.")
+                    speakInFemaleVoice("No encontré el contacto de $targetName en su agenda telefónica, señor. Abriendo WhatsApp para buscarlo.")
                     EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
                 }
+            }
+        }
+    }
+
+    private fun dispatchWhatsAppToNumber(targetName: String, phoneNumber: String, message: String) {
+        speakInFemaleVoice("Enviando WhatsApp a $targetName, señor.")
+        val cleanPhone = phoneNumber.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace("+", "")
+        val formattedPhone = if (cleanPhone.length == 10 && cleanPhone.startsWith("3")) "57$cleanPhone" else cleanPhone
+        try {
+            val url = "https://api.whatsapp.com/send?phone=$formattedPhone&text=${Uri.encode(message)}"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                setPackage("com.whatsapp")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            EdvisAccessibilityService.instance?.triggerSendWhatsAppMessage()
+        } catch (e: Exception) {
+            Log.e(TAG, "Direct WhatsApp intent error: ${e.message}", e)
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "whatsapp")
+        }
+    }
+
+    private fun dispatchWhatsAppVoiceNoteToNumber(targetName: String, phoneNumber: String) {
+        speakInFemaleVoice("Abriendo chat con $targetName para su mensaje de voz, señor.")
+        val cleanPhone = phoneNumber.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace("+", "")
+        val formattedPhone = if (cleanPhone.length == 10 && cleanPhone.startsWith("3")) "57$cleanPhone" else cleanPhone
+        try {
+            val url = "https://api.whatsapp.com/send?phone=$formattedPhone"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                setPackage("com.whatsapp")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            EdvisAccessibilityService.instance?.triggerRecordVoiceNoteInWhatsApp()
+        } catch (e: Exception) {
+            Log.e(TAG, "Direct WhatsApp intent error: ${e.message}", e)
+            EdvisAccessibilityService.launchAnyAppByNameOrPackage(this, "whatsapp")
+        }
+    }
+
+    private fun playVoiceNoteFromSpecificContact(targetPerson: String) {
+        speakInFemaleVoice("Buscando audio de $targetPerson en WhatsApp, señor.")
+        serviceScope.launch(Dispatchers.IO) {
+            val matches = findAllMatchingContacts(targetPerson)
+            val phone = matches.firstOrNull()?.number
+            withContext(Dispatchers.Main) {
+                if (!phone.isNullOrBlank()) {
+                    val cleanPhone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace("+", "")
+                    val formattedPhone = if (cleanPhone.length == 10 && cleanPhone.startsWith("3")) "57$cleanPhone" else cleanPhone
+                    val url = "https://api.whatsapp.com/send?phone=$formattedPhone"
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                        setPackage("com.whatsapp")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
+                } else {
+                    EdvisAccessibilityService.launchAnyAppByNameOrPackage(this@EdvisForegroundService, "whatsapp")
+                }
+                EdvisAccessibilityService.instance?.triggerPlayLastVoiceMessageInWhatsApp()
             }
         }
     }
