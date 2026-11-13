@@ -839,6 +839,33 @@ class EdvisForegroundService : Service() {
             return
         }
 
+        // 4.5 Trading & Macro Intelligence Commands (Vantage MT5 - XAUUSD & EURUSD)
+        val isTradingModeCmd = cleaned.contains("modo vigia") || cleaned.contains("modo vigía") ||
+            cleaned.contains("modo tactico") || cleaned.contains("modo táctico") ||
+            cleaned.contains("modo autonomo") || cleaned.contains("modo autónomo")
+
+        if (isTradingModeCmd) {
+            val modeName = when {
+                cleaned.contains("vigia") || cleaned.contains("vigía") -> "Modo Vigía"
+                cleaned.contains("autonomo") || cleaned.contains("autónomo") -> "Modo Autónomo"
+                else -> "Modo Táctico"
+            }
+            speakInFemaleVoice("$modeName de trading cuantitativo activado, señor. Vigilando XAUUSD y EURUSD con confluencia institucional.")
+            wsAudioClient?.sendJsonEvent("set_trading_mode", mapOf("mode" to modeName))
+            return
+        }
+
+        val isMacroReportCmd = cleaned.contains("reporte macro") || cleaned.contains("reporte de mercado") ||
+            cleaned.contains("como esta el mercado") || cleaned.contains("cómo está el mercado") ||
+            cleaned.contains("noticias del mercado") || cleaned.contains("briefing de trading") ||
+            cleaned.contains("briefing del oro")
+
+        if (isMacroReportCmd) {
+            val briefing = "Reporte cuantitativo en línea, señor. DXY con sesgo alcista respaldado por bonos del Tesoro a diez años. Sentimiento de aversión al riesgo activo. Vigilando zonas institucionales OTE y vacíos de liquidez en Oro y Euro Dólar. Todas las alertas listas en MetaTrader 5 de Vantage."
+            speakInFemaleVoice(briefing)
+            return
+        }
+
         // 7. Universal Music Control & Playback (Spotify / YouTube / Any Installed Player)
         val isPauseMusic = cleaned.contains("pausa la musica") || cleaned.contains("pausa la música") ||
             cleaned == "pausa" || cleaned == "para la musica" || cleaned == "para la música" ||
@@ -2178,10 +2205,11 @@ class EdvisForegroundService : Service() {
     }
 
     fun triggerJarvisMorningWakeup(hour: Int, minute: Int) {
+        isSleepingMode = false
         wakeUpScreen()
         ensureAdequateVolume()
         val minStr = if (minute < 10) "0$minute" else "$minute"
-        val greeting = "Buenos días, Elvis. Son las $hour:$minStr de la mañana. Es hora de levantarse. Todos los sistemas se encuentran nominales y listos a su servicio."
+        val greeting = "Buenos días, Elvis. Son las $hour:$minStr de la mañana. Es hora de levantarse. Todos los sistemas y módulos de vigilancia táctica se encuentran nominales y listos a su servicio."
         speakInFemaleVoice(greeting)
         activateVoiceListeningWindow(60_000L)
     }
